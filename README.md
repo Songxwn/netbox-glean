@@ -12,6 +12,7 @@
 - **云资产采集**：从 vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎读取 VPC/子网网段、实例 IP 与弹性公网 IP，单独写入 NetBox IPAM
 - 查看每次采集的日志、硬件摘要、扫描结果和 NetBox 同步结果
 - 在线配置 NetBox 连接、默认 Site / Device Role / Platform 和同步策略
+- **中英文界面切换**：侧边栏一键切换，偏好保存在浏览器本地
 
 [![CI](https://github.com/Songxwn/netbox-glean/actions/workflows/ci.yml/badge.svg)](https://github.com/Songxwn/netbox-glean/actions/workflows/ci.yml)
 [![Release](https://github.com/Songxwn/netbox-glean/actions/workflows/release.yml/badge.svg)](https://github.com/Songxwn/netbox-glean/actions/workflows/release.yml)
@@ -49,6 +50,10 @@
 - **单二进制、跨平台**
   - 前端资源通过 `go:embed` 打包进可执行文件
   - GitHub Actions 自动构建 Linux / Windows / macOS / FreeBSD 多架构发布包
+- **中英文界面**
+  - Web UI 全部文案支持中文 / English，侧边栏底部一键切换
+  - 首次访问按浏览器语言自动选择，之后保存在 localStorage
+  - 后端 API 错误与任务日志仍为中文
 - **任务模型**
   - 后台并发执行，限制并发数与单任务超时
   - 每个目标可开启定时任务，按分钟间隔自动采集并同步

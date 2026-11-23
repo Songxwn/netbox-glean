@@ -63,6 +63,13 @@ a:hover { text-decoration: underline; }
   color: var(--muted); font-size: 12px;
 }
 
+.lang-btn {
+  appearance: none; border: 1px solid var(--line); background: transparent;
+  color: var(--muted); font: inherit; font-size: 11px; padding: 3px 9px;
+  border-radius: 8px; cursor: pointer; white-space: nowrap;
+}
+.lang-btn:hover { color: var(--text); border-color: #33456e; background: rgba(79, 140, 255, .08); }
+
 .main { padding: 26px 30px 60px; min-width: 0; }
 
 .topbar { display: flex; gap: 20px; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }

@@ -19,79 +19,80 @@
       </svg>
       <div>
         <strong>netbox-glean</strong>
-        <span>硬件自动发现</span>
+        <span data-i18n="brand.tagline">硬件自动发现</span>
       </div>
     </div>
     <nav class="nav">
-      <button class="nav-item active" data-page="dashboard">概览</button>
-      <button class="nav-item" data-page="targets">采集目标</button>
-      <button class="nav-item" data-page="iptargets">IP 采集</button>
-      <button class="nav-item" data-page="cloudtargets">云资产采集</button>
-      <button class="nav-item" data-page="jobs">任务记录</button>
-      <button class="nav-item" data-page="settings">设置</button>
+      <button class="nav-item active" data-page="dashboard" data-i18n="nav.dashboard">概览</button>
+      <button class="nav-item" data-page="targets" data-i18n="nav.targets">采集目标</button>
+      <button class="nav-item" data-page="iptargets" data-i18n="nav.iptargets">IP 采集</button>
+      <button class="nav-item" data-page="cloudtargets" data-i18n="nav.cloudtargets">云资产采集</button>
+      <button class="nav-item" data-page="jobs" data-i18n="nav.jobs">任务记录</button>
+      <button class="nav-item" data-page="settings" data-i18n="nav.settings">设置</button>
     </nav>
     <div class="sidebar-foot">
       <span id="version-label">dev</span>
-      <a href="/api/health" target="_blank" rel="noreferrer">健康检查</a>
+      <button class="lang-btn" id="btn-lang" type="button">English</button>
+      <a href="/api/health" target="_blank" rel="noreferrer" data-i18n="sidebar.health">健康检查</a>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
       <div>
-        <h1 id="page-title">概览</h1>
-        <p id="page-subtitle">通过 SNMP / IPMI / Redfish 采集设备硬件信息并写入 NetBox</p>
+        <h1 id="page-title" data-i18n="page.dashboard.title">概览</h1>
+        <p id="page-subtitle" data-i18n="page.dashboard.subtitle">通过 SNMP / IPMI / Redfish 采集设备硬件信息并写入 NetBox</p>
       </div>
       <div class="top-actions">
-        <button class="btn" id="btn-collect-all">采集全部</button>
-        <button class="btn primary" id="btn-sync-all">同步全部</button>
-        <button class="btn" id="btn-scan">批量扫描</button>
+        <button class="btn" id="btn-collect-all" data-i18n="topbar.collectAll">采集全部</button>
+        <button class="btn primary" id="btn-sync-all" data-i18n="topbar.syncAll">同步全部</button>
+        <button class="btn" id="btn-scan" data-i18n="topbar.scan">批量扫描</button>
       </div>
     </header>
 
     <section class="page" id="page-dashboard">
       <div class="stats-grid">
         <div class="stat-card">
-          <span class="stat-label">采集目标</span>
+          <span class="stat-label" data-i18n="stat.targets">采集目标</span>
           <strong id="stat-targets">0</strong>
           <span class="stat-hint" id="stat-targets-hint">启用 0 个</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">运行中任务</span>
+          <span class="stat-label" data-i18n="stat.running">运行中任务</span>
           <strong id="stat-running">0</strong>
           <span class="stat-hint" id="stat-queued">排队 0 个</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">成功任务</span>
+          <span class="stat-label" data-i18n="stat.success">成功任务</span>
           <strong id="stat-success">0</strong>
-          <span class="stat-hint">历史记录</span>
+          <span class="stat-hint" data-i18n="stat.history">历史记录</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">失败任务</span>
+          <span class="stat-label" data-i18n="stat.error">失败任务</span>
           <strong id="stat-error">0</strong>
-          <span class="stat-hint">查看任务日志定位问题</span>
+          <span class="stat-hint" data-i18n="stat.errorHint">查看任务日志定位问题</span>
         </div>
       </div>
 
       <div class="grid-2">
         <div class="panel">
           <div class="panel-head">
-            <h2>最近任务</h2>
-            <button class="link-btn" data-goto="jobs">查看全部</button>
+            <h2 data-i18n="dashboard.recent">最近任务</h2>
+            <button class="link-btn" data-goto="jobs" data-i18n="dashboard.viewAll">查看全部</button>
           </div>
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr><th>目标</th><th>模式</th><th>状态</th><th>时间</th></tr>
+                <tr><th data-i18n="th.target">目标</th><th data-i18n="th.mode">模式</th><th data-i18n="th.status">状态</th><th data-i18n="th.time">时间</th></tr>
               </thead>
               <tbody id="recent-jobs"></tbody>
             </table>
           </div>
-          <div class="empty hidden" id="recent-empty">还没有任务，先添加采集目标或点击“采集全部”。</div>
+          <div class="empty hidden" id="recent-empty" data-i18n="dashboard.recentEmpty">还没有任务，先添加采集目标或点击“采集全部”。</div>
         </div>
 
         <div class="panel">
-          <div class="panel-head"><h2>协议分布</h2></div>
+          <div class="panel-head"><h2 data-i18n="dashboard.protocols">协议分布</h2></div>
           <div class="protocol-list" id="protocol-list"></div>
           <div class="netbox-state" id="netbox-state"></div>
         </div>
@@ -100,23 +101,23 @@
 
     <section class="page hidden" id="page-targets">
       <div class="toolbar">
-        <input class="input search" id="target-search" type="search" placeholder="搜索名称或地址">
-        <button class="btn" id="btn-scan-targets">批量扫描</button>
-        <button class="btn primary" id="btn-add-target">新增目标</button>
+        <input class="input search" id="target-search" type="search" placeholder="搜索名称或地址" data-i18n-placeholder="search.targets">
+        <button class="btn" id="btn-scan-targets" data-i18n="topbar.scan">批量扫描</button>
+        <button class="btn primary" id="btn-add-target" data-i18n="btn.addTarget">新增目标</button>
       </div>
       <div class="panel">
         <div class="table-wrap">
           <table class="table">
             <thead>
               <tr>
-                <th>名称</th><th>协议</th><th>地址</th><th>Site</th>
-                <th>NetBox 设备</th><th>定时</th><th>状态</th><th class="right">操作</th>
+                <th data-i18n="th.name">名称</th><th data-i18n="th.protocol">协议</th><th data-i18n="th.address">地址</th><th data-i18n="th.site">Site</th>
+                <th data-i18n="th.netboxDevice">NetBox 设备</th><th data-i18n="th.schedule">定时</th><th data-i18n="th.status">状态</th><th class="right" data-i18n="th.actions">操作</th>
               </tr>
             </thead>
             <tbody id="targets-body"></tbody>
           </table>
         </div>
-        <div class="empty hidden" id="targets-empty">
+        <div class="empty hidden" id="targets-empty" data-i18n="targets.empty">
           还没有采集目标。点击“新增目标”开始，需要先在设置中配置 NetBox。
         </div>
       </div>
@@ -124,24 +125,24 @@
 
     <section class="page hidden" id="page-iptargets">
       <div class="toolbar">
-        <input class="input search" id="ip-target-search" type="search" placeholder="搜索名称或网段">
-        <button class="btn" id="btn-ip-collect-all">采集全部</button>
-        <button class="btn" id="btn-ip-sync-all">同步全部</button>
-        <button class="btn primary" id="btn-add-ip-target">新增 IP 采集</button>
+        <input class="input search" id="ip-target-search" type="search" placeholder="搜索名称或网段" data-i18n-placeholder="search.ip">
+        <button class="btn" id="btn-ip-collect-all" data-i18n="topbar.collectAll">采集全部</button>
+        <button class="btn" id="btn-ip-sync-all" data-i18n="topbar.syncAll">同步全部</button>
+        <button class="btn primary" id="btn-add-ip-target" data-i18n="btn.addIpTarget">新增 IP 采集</button>
       </div>
       <div class="panel">
         <div class="table-wrap">
           <table class="table">
             <thead>
               <tr>
-                <th>名称</th><th>类型</th><th>扫描网段</th>
-                <th>定时</th><th>状态</th><th class="right">操作</th>
+                <th data-i18n="th.name">名称</th><th data-i18n="th.type">类型</th><th data-i18n="th.subnets">扫描网段</th>
+                <th data-i18n="th.schedule">定时</th><th data-i18n="th.status">状态</th><th class="right" data-i18n="th.actions">操作</th>
               </tr>
             </thead>
             <tbody id="ip-targets-body"></tbody>
           </table>
         </div>
-        <div class="empty hidden" id="ip-targets-empty">
+        <div class="empty hidden" id="ip-targets-empty" data-i18n="ip.empty">
           还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4/IPv6 网段，并把结果写入 NetBox IPAM。
         </div>
       </div>
@@ -149,24 +150,24 @@
 
     <section class="page hidden" id="page-cloudtargets">
       <div class="toolbar">
-        <input class="input search" id="cloud-target-search" type="search" placeholder="搜索名称、云平台或区域">
-        <button class="btn" id="btn-cloud-collect-all">采集全部</button>
-        <button class="btn" id="btn-cloud-sync-all">同步全部</button>
-        <button class="btn primary" id="btn-add-cloud-target">新增云账号</button>
+        <input class="input search" id="cloud-target-search" type="search" placeholder="搜索名称、云平台或区域" data-i18n-placeholder="search.cloud">
+        <button class="btn" id="btn-cloud-collect-all" data-i18n="topbar.collectAll">采集全部</button>
+        <button class="btn" id="btn-cloud-sync-all" data-i18n="topbar.syncAll">同步全部</button>
+        <button class="btn primary" id="btn-add-cloud-target" data-i18n="btn.addCloudTarget">新增云账号</button>
       </div>
       <div class="panel">
         <div class="table-wrap">
           <table class="table">
             <thead>
               <tr>
-                <th>名称 / 账号</th><th>云平台</th><th>区域</th><th>采集内容</th>
-                <th>定时</th><th>状态</th><th class="right">操作</th>
+                <th data-i18n="th.account">名称 / 账号</th><th data-i18n="th.provider">云平台</th><th data-i18n="th.region">区域</th><th data-i18n="th.collectItems">采集内容</th>
+                <th data-i18n="th.schedule">定时</th><th data-i18n="th.status">状态</th><th class="right" data-i18n="th.actions">操作</th>
               </tr>
             </thead>
             <tbody id="cloud-targets-body"></tbody>
           </table>
         </div>
-        <div class="empty hidden" id="cloud-targets-empty">
+        <div class="empty hidden" id="cloud-targets-empty" data-i18n="cloud.empty">
           还没有云资产采集目标。支持 VMware vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud 与火山引擎，可采集 VPC/子网网段、实例 IP 和弹性公网 IP 并写入 NetBox IPAM。
         </div>
       </div>
@@ -174,22 +175,22 @@
 
     <section class="page hidden" id="page-jobs">
       <div class="toolbar">
-        <span class="muted" id="jobs-summary">任务记录保留在内存中，重启后清空。</span>
-        <button class="btn" id="btn-clear-jobs">清理已完成</button>
+        <span class="muted" id="jobs-summary" data-i18n="jobs.summaryDefault">任务记录保留在内存中，重启后清空。</span>
+        <button class="btn" id="btn-clear-jobs" data-i18n="btn.clearJobs">清理已完成</button>
       </div>
       <div class="panel">
         <div class="table-wrap">
           <table class="table">
             <thead>
               <tr>
-                <th>目标</th><th>协议</th><th>模式</th><th>状态</th>
-                <th>接口 / 发现</th><th>组件 / 新增</th><th>开始时间</th><th>耗时</th><th class="right">操作</th>
+                <th data-i18n="th.target">目标</th><th data-i18n="th.protocol">协议</th><th data-i18n="th.mode">模式</th><th data-i18n="th.status">状态</th>
+                <th data-i18n="th.interfacesFound">接口 / 发现</th><th data-i18n="th.componentsAdded">组件 / 新增</th><th data-i18n="th.started">开始时间</th><th data-i18n="th.duration">耗时</th><th class="right" data-i18n="th.actions">操作</th>
               </tr>
             </thead>
             <tbody id="jobs-body"></tbody>
           </table>
         </div>
-        <div class="empty hidden" id="jobs-empty">暂无任务记录。</div>
+        <div class="empty hidden" id="jobs-empty" data-i18n="jobs.empty">暂无任务记录。</div>
       </div>
     </section>
 
@@ -197,111 +198,111 @@
       <form id="settings-form" class="settings-form">
         <div class="panel">
           <div class="panel-head">
-            <h2>NetBox 连接</h2>
-            <button type="button" class="btn" id="btn-test-netbox">测试连接</button>
+            <h2 data-i18n="settings.netbox">NetBox 连接</h2>
+            <button type="button" class="btn" id="btn-test-netbox" data-i18n="btn.testNetbox">测试连接</button>
           </div>
           <div class="form-grid">
             <label class="field span-2">
-              <span>NetBox URL</span>
+              <span data-i18n="label.netboxUrl">NetBox URL</span>
               <input class="input" id="set-netbox-url" placeholder="https://netbox.example.com" autocomplete="off">
             </label>
             <label class="field span-2">
-              <span>API Token</span>
-              <input class="input" id="set-netbox-token" type="password" placeholder="留空表示不修改已保存的 Token" autocomplete="new-password">
-              <small>支持 v1 Token 与 NetBox 4.5+ 的 v2 Bearer Token（nbt_ 前缀）。</small>
+              <span data-i18n="label.apiToken">API Token</span>
+              <input class="input" id="set-netbox-token" type="password" placeholder="留空表示不修改已保存的 Token" data-i18n-placeholder="token.placeholderEmpty" autocomplete="new-password">
+              <small data-i18n="token.hint">支持 v1 Token 与 NetBox 4.5+ 的 v2 Bearer Token（nbt_ 前缀）。</small>
             </label>
             <label class="field">
-              <span>Token 版本</span>
+              <span data-i18n="label.tokenVersion">Token 版本</span>
               <select class="input" id="set-token-version">
-                <option value="auto">自动识别</option>
-                <option value="1">v1（Token）</option>
-                <option value="2">v2（Bearer）</option>
+                <option value="auto" data-i18n="token.auto">自动识别</option>
+                <option value="1" data-i18n="token.v1">v1（Token）</option>
+                <option value="2" data-i18n="token.v2">v2（Bearer）</option>
               </select>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-netbox-insecure">
-              <span>跳过 NetBox TLS 证书校验</span>
+              <span data-i18n="settings.insecure">跳过 NetBox TLS 证书校验</span>
             </label>
           </div>
         </div>
 
         <div class="panel">
-          <div class="panel-head"><h2>写入默认值</h2></div>
+          <div class="panel-head"><h2 data-i18n="settings.defaults">写入默认值</h2></div>
           <div class="form-grid">
             <label class="field">
-              <span>Site slug</span>
+              <span data-i18n="label.siteSlug">Site slug</span>
               <input class="input" id="set-site" placeholder="dc1" autocomplete="off">
             </label>
             <label class="field">
-              <span>Site 名称（首次创建时使用）</span>
+              <span data-i18n="label.siteName">Site 名称（首次创建时使用）</span>
               <input class="input" id="set-site-name" placeholder="DC1" autocomplete="off">
             </label>
             <label class="field">
-              <span>Device role slug</span>
+              <span data-i18n="label.deviceRole">Device role slug</span>
               <input class="input" id="set-device-role" placeholder="server" autocomplete="off">
             </label>
             <label class="field">
-              <span>Platform slug（可选）</span>
+              <span data-i18n="label.platform">Platform slug（可选）</span>
               <input class="input" id="set-platform" placeholder="linux" autocomplete="off">
             </label>
             <label class="field">
-              <span>Device type U 高</span>
+              <span data-i18n="label.uHeight">Device type U 高</span>
               <input class="input" id="set-u-height" type="number" min="0" max="100" step="1">
             </label>
             <label class="field">
-              <span>设备描述</span>
+              <span data-i18n="label.description">设备描述</span>
               <input class="input" id="set-description" placeholder="Managed by netbox-glean" autocomplete="off">
             </label>
           </div>
         </div>
 
         <div class="panel">
-          <div class="panel-head"><h2>同步选项</h2></div>
+          <div class="panel-head"><h2 data-i18n="settings.sync">同步选项</h2></div>
           <div class="form-grid checks">
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-interfaces">
-              <span>同步网卡接口</span>
+              <span data-i18n="sync.interfaces">同步网卡接口</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-inventory">
-              <span>同步硬件清单</span>
+              <span data-i18n="sync.inventory">同步硬件清单</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-cables">
-              <span>按 LLDP 邻居自动创建连线（Cable）</span>
+              <span data-i18n="sync.cables">按 LLDP 邻居自动创建连线（Cable）</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-ip-addresses">
-              <span>同步发现的 IP 地址到 NetBox IPAM</span>
+              <span data-i18n="sync.ips">同步发现的 IP 地址到 NetBox IPAM</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-unmatched-ips">
-              <span>写入未匹配 NetBox 接口的 IP（不分配）</span>
+              <span data-i18n="sync.unmatched">写入未匹配 NetBox 接口的 IP（不分配）</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-cloud-assets">
-              <span>同步云资产（VPC/子网网段与实例 IP）到 NetBox IPAM</span>
+              <span data-i18n="sync.cloud">同步云资产（VPC/子网网段与实例 IP）到 NetBox IPAM</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-custom-fields">
-              <span>写入已存在的 glean_* 自定义字段</span>
+              <span data-i18n="sync.customFields">写入已存在的 glean_* 自定义字段</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-assign-ip">
-              <span>设置管理地址为主 IP</span>
+              <span data-i18n="sync.primaryIp">设置管理地址为主 IP</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-prune-interfaces">
-              <span>删除本次未采集到的接口（谨慎）</span>
+              <span data-i18n="sync.prune">删除本次未采集到的接口（谨慎）</span>
             </label>
             <label class="field">
-              <span>管理接口名称</span>
+              <span data-i18n="label.primaryInterface">管理接口名称</span>
               <input class="input" id="set-primary-interface" placeholder="mgmt0" autocomplete="off">
             </label>
           </div>
           <div class="form-actions">
-            <button class="btn primary" type="submit">保存设置</button>
-            <span class="muted">环境变量与启动参数仅在首次启动时作为初始值。</span>
+            <button class="btn primary" type="submit" data-i18n="btn.saveSettings">保存设置</button>
+            <span class="muted" data-i18n="settings.envHint">环境变量与启动参数仅在首次启动时作为初始值。</span>
           </div>
         </div>
       </form>
@@ -313,17 +314,17 @@
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-card">
     <div class="modal-head">
-      <h2 id="target-modal-title">新增目标</h2>
-      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+      <h2 id="target-modal-title" data-i18n="modal.addTarget">新增目标</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭" data-i18n-aria="modal.close">×</button>
     </div>
     <form id="target-form">
       <div class="form-grid">
         <label class="field">
-          <span>名称</span>
+          <span data-i18n="label.name">名称</span>
           <input class="input" id="t-name" required autocomplete="off">
         </label>
         <label class="field">
-          <span>协议</span>
+          <span data-i18n="label.protocol">协议</span>
           <select class="input" id="t-protocol">
             <option value="snmp">SNMP</option>
             <option value="ipmi">IPMI</option>
@@ -331,59 +332,59 @@
           </select>
         </label>
         <label class="field">
-          <span>地址</span>
+          <span data-i18n="label.address">地址</span>
           <input class="input" id="t-address" required placeholder="10.0.0.10" autocomplete="off">
         </label>
         <label class="field">
-          <span>端口</span>
+          <span data-i18n="label.port">端口</span>
           <input class="input" id="t-port" type="number" min="0" max="65535" step="1">
         </label>
         <label class="field">
-          <span>Site slug 覆盖（可选）</span>
+          <span data-i18n="label.siteOverride">Site slug 覆盖（可选）</span>
           <input class="input" id="t-site" autocomplete="off">
         </label>
         <label class="field">
-          <span>Device role 覆盖（可选）</span>
+          <span data-i18n="label.roleOverride">Device role 覆盖（可选）</span>
           <input class="input" id="t-role" autocomplete="off">
         </label>
         <label class="field">
-          <span>Platform 覆盖（可选）</span>
+          <span data-i18n="label.platformOverride">Platform 覆盖（可选）</span>
           <input class="input" id="t-platform" autocomplete="off">
         </label>
         <label class="field">
-          <span>NetBox 设备名覆盖（可选）</span>
-          <input class="input" id="t-device-name" placeholder="留空则使用采集到的名称" autocomplete="off">
+          <span data-i18n="label.deviceNameOverride">NetBox 设备名覆盖（可选）</span>
+          <input class="input" id="t-device-name" placeholder="留空则使用采集到的名称" data-i18n-placeholder="placeholder.deviceName" autocomplete="off">
         </label>
         <label class="field span-2">
-          <span>描述</span>
+          <span data-i18n="label.description">描述</span>
           <input class="input" id="t-description" autocomplete="off">
         </label>
         <label class="field checkbox-field span-2">
           <input type="checkbox" id="t-enabled" checked>
-          <span>启用该目标（参与“采集全部”与定时任务）</span>
+          <span data-i18n="target.enable">启用该目标（参与“采集全部”与定时任务）</span>
         </label>
       </div>
 
       <fieldset class="schedule-box">
-        <legend>定时任务</legend>
+        <legend data-i18n="schedule.legend">定时任务</legend>
         <div class="form-grid">
           <label class="field checkbox-field">
             <input type="checkbox" id="t-schedule-enabled">
-            <span>启用定时采集并同步</span>
+            <span data-i18n="schedule.enable">启用定时采集并同步</span>
           </label>
           <label class="field">
-            <span>间隔（分钟）</span>
+            <span data-i18n="label.interval">间隔（分钟）</span>
             <input class="input" id="t-schedule-interval" type="number" min="5" max="10080" step="1" value="60">
           </label>
         </div>
-        <p class="muted">到点后自动执行采集并写入 NetBox；若该目标已有排队或运行中的任务，本轮跳过。首次启用后会立即执行一次。</p>
+        <p class="muted" data-i18n="schedule.hint">到点后自动执行采集并写入 NetBox；若该目标已有排队或运行中的任务，本轮跳过。首次启用后会立即执行一次。</p>
       </fieldset>
 
       <fieldset class="proto proto-snmp">
         <legend>SNMP</legend>
         <div class="form-grid">
           <label class="field">
-            <span>版本</span>
+            <span data-i18n="label.version">版本</span>
             <select class="input" id="s-version">
               <option value="v2c">v2c</option>
               <option value="v1">v1</option>
@@ -392,14 +393,14 @@
           </label>
           <label class="field">
             <span>Community</span>
-            <input class="input" id="s-community" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <input class="input" id="s-community" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>v3 用户名</span>
+            <span data-i18n="label.v3user">v3 用户名</span>
             <input class="input" id="s-v3-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>v3 认证协议</span>
+            <span data-i18n="label.v3authProto">v3 认证协议</span>
             <select class="input" id="s-v3-auth-proto">
               <option value="SHA256">SHA256</option>
               <option value="SHA">SHA1</option>
@@ -410,11 +411,11 @@
             </select>
           </label>
           <label class="field">
-            <span>v3 认证密码</span>
-            <input class="input" id="s-v3-auth-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <span data-i18n="label.v3authPass">v3 认证密码</span>
+            <input class="input" id="s-v3-auth-pass" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>v3 加密协议</span>
+            <span data-i18n="label.v3privProto">v3 加密协议</span>
             <select class="input" id="s-v3-priv-proto">
               <option value="AES">AES</option>
               <option value="DES">DES</option>
@@ -423,8 +424,8 @@
             </select>
           </label>
           <label class="field">
-            <span>v3 加密密码</span>
-            <input class="input" id="s-v3-priv-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <span data-i18n="label.v3privPass">v3 加密密码</span>
+            <input class="input" id="s-v3-priv-pass" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
         </div>
       </fieldset>
@@ -433,15 +434,15 @@
         <legend>IPMI</legend>
         <div class="form-grid">
           <label class="field">
-            <span>用户名</span>
+            <span data-i18n="label.username">用户名</span>
             <input class="input" id="i-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>密码</span>
-            <input class="input" id="i-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <span data-i18n="label.password">密码</span>
+            <input class="input" id="i-pass" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>接口</span>
+            <span data-i18n="label.interface">接口</span>
             <select class="input" id="i-interface">
               <option value="lanplus">lanplus (IPMI 2.0)</option>
               <option value="lan">lan (IPMI 1.5)</option>
@@ -454,27 +455,27 @@
         <legend>Redfish</legend>
         <div class="form-grid">
           <label class="field">
-            <span>用户名</span>
+            <span data-i18n="label.username">用户名</span>
             <input class="input" id="r-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>密码</span>
-            <input class="input" id="r-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <span data-i18n="label.password">密码</span>
+            <input class="input" id="r-pass" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>System ID（可选）</span>
+            <span data-i18n="label.systemId">System ID（可选）</span>
             <input class="input" id="r-system" placeholder="1" autocomplete="off">
           </label>
           <label class="field checkbox-field">
             <input type="checkbox" id="r-insecure">
-            <span>跳过 TLS 证书校验</span>
+            <span data-i18n="label.skipTls">跳过 TLS 证书校验</span>
           </label>
         </div>
       </fieldset>
 
       <div class="form-actions">
-        <button class="btn" type="button" data-close-modal>取消</button>
-        <button class="btn primary" type="submit">保存</button>
+        <button class="btn" type="button" data-close-modal data-i18n="btn.cancel">取消</button>
+        <button class="btn primary" type="submit" data-i18n="btn.save">保存</button>
       </div>
     </form>
   </div>
@@ -484,39 +485,39 @@
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-card">
     <div class="modal-head">
-      <h2 id="ip-target-modal-title">新增 IP 采集</h2>
-      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+      <h2 id="ip-target-modal-title" data-i18n="modal.addIp">新增 IP 采集</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭" data-i18n-aria="modal.close">×</button>
     </div>
     <form id="ip-target-form">
       <div class="form-grid">
         <label class="field">
-          <span>名称</span>
-          <input class="input" id="it-name" autocomplete="off" placeholder="办公网 IP 采集">
+          <span data-i18n="label.name">名称</span>
+          <input class="input" id="it-name" autocomplete="off" placeholder="办公网 IP 采集" data-i18n-placeholder="placeholder.ipName">
         </label>
         <label class="field checkbox-field">
           <input type="checkbox" id="it-enabled" checked>
-          <span>启用该目标（参与“采集全部”与定时任务）</span>
+          <span data-i18n="target.enable">启用该目标（参与“采集全部”与定时任务）</span>
         </label>
         <label class="field span-2">
-          <span>扫描网段（CIDR，逗号分隔）</span>
+          <span data-i18n="label.scanSubnets">扫描网段（CIDR，逗号分隔）</span>
           <input class="input" id="it-subnets" placeholder="10.0.0.0/24, 2001:db8::/120" autocomplete="off">
-          <small>通过 ICMP/ICMPv6 探活，用于发现网段内的地址。IPv6 最多支持 /120（256 个地址），更宽的网段请使用 SNMP NDP 来源。可与 SNMP 来源二选一或同时使用。</small>
+          <small data-i18n="ip.subnetsHint">通过 ICMP/ICMPv6 探活，用于发现网段内的地址。IPv6 最多支持 /120（256 个地址），更宽的网段请使用 SNMP NDP 来源。可与 SNMP 来源二选一或同时使用。</small>
         </label>
       </div>
 
       <fieldset class="schedule-box">
-        <legend>SNMP 来源（可选）</legend>
+        <legend data-i18n="legend.snmpSource">SNMP 来源（可选）</legend>
         <div class="form-grid">
           <label class="field">
-            <span>设备地址</span>
+            <span data-i18n="label.deviceAddress">设备地址</span>
             <input class="input" id="it-source-address" placeholder="10.0.0.1" autocomplete="off">
           </label>
           <label class="field">
-            <span>端口</span>
+            <span data-i18n="label.port">端口</span>
             <input class="input" id="it-source-port" type="number" min="0" max="65535" step="1" value="161">
           </label>
           <label class="field">
-            <span>SNMP 版本</span>
+            <span data-i18n="label.snmpVersion">SNMP 版本</span>
             <select class="input" id="is-version">
               <option value="v2c">v2c</option>
               <option value="v1">v1</option>
@@ -525,14 +526,14 @@
           </label>
           <label class="field">
             <span>Community</span>
-            <input class="input" id="is-community" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <input class="input" id="is-community" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>v3 用户名</span>
+            <span data-i18n="label.v3user">v3 用户名</span>
             <input class="input" id="is-v3-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>v3 认证协议</span>
+            <span data-i18n="label.v3authProto">v3 认证协议</span>
             <select class="input" id="is-v3-auth-proto">
               <option value="SHA256">SHA256</option>
               <option value="SHA">SHA1</option>
@@ -543,11 +544,11 @@
             </select>
           </label>
           <label class="field">
-            <span>v3 认证密码</span>
-            <input class="input" id="is-v3-auth-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <span data-i18n="label.v3authPass">v3 认证密码</span>
+            <input class="input" id="is-v3-auth-pass" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>v3 加密协议</span>
+            <span data-i18n="label.v3privProto">v3 加密协议</span>
             <select class="input" id="is-v3-priv-proto">
               <option value="AES">AES</option>
               <option value="DES">DES</option>
@@ -556,30 +557,30 @@
             </select>
           </label>
           <label class="field">
-            <span>v3 加密密码</span>
-            <input class="input" id="is-v3-priv-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+            <span data-i18n="label.v3privPass">v3 加密密码</span>
+            <input class="input" id="is-v3-priv-pass" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
           </label>
         </div>
-        <p class="muted">读取该设备的 ARP/NDP 表，按 MAC 匹配 NetBox 接口后写入 IPAM。</p>
+        <p class="muted" data-i18n="ip.sourceHint">读取该设备的 ARP/NDP 表，按 MAC 匹配 NetBox 接口后写入 IPAM。</p>
       </fieldset>
 
       <fieldset class="schedule-box">
-        <legend>定时任务</legend>
+        <legend data-i18n="schedule.legend">定时任务</legend>
         <div class="form-grid">
           <label class="field checkbox-field">
             <input type="checkbox" id="it-schedule-enabled">
-            <span>启用定时采集并同步</span>
+            <span data-i18n="schedule.enable">启用定时采集并同步</span>
           </label>
           <label class="field">
-            <span>间隔（分钟）</span>
+            <span data-i18n="label.interval">间隔（分钟）</span>
             <input class="input" id="it-schedule-interval" type="number" min="5" max="10080" step="1" value="60">
           </label>
         </div>
       </fieldset>
 
       <div class="form-actions">
-        <button class="btn" type="button" data-close-modal>取消</button>
-        <button class="btn primary" type="submit">保存</button>
+        <button class="btn" type="button" data-close-modal data-i18n="btn.cancel">取消</button>
+        <button class="btn primary" type="submit" data-i18n="btn.save">保存</button>
       </div>
     </form>
   </div>
@@ -589,38 +590,38 @@
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-card">
     <div class="modal-head">
-      <h2 id="cloud-target-modal-title">新增云账号</h2>
-      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+      <h2 id="cloud-target-modal-title" data-i18n="modal.addCloud">新增云账号</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭" data-i18n-aria="modal.close">×</button>
     </div>
     <form id="cloud-target-form">
       <div class="form-grid">
         <label class="field">
-          <span>名称</span>
-          <input class="input" id="ct-name" autocomplete="off" placeholder="生产账号 · 阿里云">
+          <span data-i18n="label.name">名称</span>
+          <input class="input" id="ct-name" autocomplete="off" placeholder="生产账号 · 阿里云" data-i18n-placeholder="placeholder.cloudName">
         </label>
         <label class="field">
-          <span>云平台</span>
+          <span data-i18n="label.provider">云平台</span>
           <select class="input" id="ct-provider">
-            <option value="vcenter">VMware vCenter</option>
-            <option value="aliyun">阿里云（含国际站）</option>
-            <option value="tencent">腾讯云</option>
-            <option value="huawei">华为云</option>
-            <option value="aws">AWS</option>
-            <option value="gcp">Google Cloud</option>
-            <option value="volcengine">火山引擎</option>
+            <option value="vcenter" data-i18n="provider.vcenter">VMware vCenter</option>
+            <option value="aliyun" data-i18n="provider.aliyunFull">阿里云（含国际站）</option>
+            <option value="tencent" data-i18n="provider.tencent">腾讯云</option>
+            <option value="huawei" data-i18n="provider.huawei">华为云</option>
+            <option value="aws" data-i18n="provider.aws">AWS</option>
+            <option value="gcp" data-i18n="provider.gcp">Google Cloud</option>
+            <option value="volcengine" data-i18n="provider.volcengine">火山引擎</option>
           </select>
         </label>
         <label class="field checkbox-field span-2">
           <input type="checkbox" id="ct-enabled" checked>
-          <span>启用该账号（参与“采集全部”与定时任务）</span>
+          <span data-i18n="cloud.enable">启用该账号（参与“采集全部”与定时任务）</span>
         </label>
         <label class="field span-2">
-          <span id="ct-endpoint-label">API Endpoint（可选）</span>
-          <input class="input" id="ct-endpoint" placeholder="留空使用默认公网 Endpoint" autocomplete="off">
-          <small>vCenter 必填，例如 https://vcenter.example.com。公有云一般留空；阿里云、腾讯云、华为云可用 {service} 占位符指定自定义网关。</small>
+          <span id="ct-endpoint-label" data-i18n="ct.endpointOptional">API Endpoint（可选）</span>
+          <input class="input" id="ct-endpoint" placeholder="留空使用默认公网 Endpoint" data-i18n-placeholder="placeholder.endpoint" autocomplete="off">
+          <small data-i18n="ct.endpointHint">vCenter 必填，例如 https://vcenter.example.com。公有云一般留空；阿里云、腾讯云、华为云可用 {service} 占位符指定自定义网关。</small>
         </label>
         <label class="field cloud-region">
-          <span>区域（Region）</span>
+          <span data-i18n="label.region">区域（Region）</span>
           <input class="input" id="ct-region" placeholder="cn-hangzhou / ap-southeast-1" autocomplete="off">
         </label>
         <label class="field cloud-project hidden">
@@ -629,68 +630,68 @@
         </label>
         <label class="field cloud-access">
           <span id="ct-access-label">AccessKey</span>
-          <input class="input" id="ct-access" autocomplete="off" placeholder="留空表示不修改">
+          <input class="input" id="ct-access" autocomplete="off" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty">
         </label>
         <label class="field cloud-secret">
           <span id="ct-secret-label">SecretKey</span>
-          <input class="input" id="ct-secret" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          <input class="input" id="ct-secret" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
         </label>
         <label class="field span-2 cloud-credentials hidden">
-          <span>服务账号 JSON（Google Cloud）</span>
-          <textarea class="input" id="ct-credentials" rows="5" placeholder="粘贴服务账号 JSON，留空表示不修改已保存的凭据" autocomplete="off"></textarea>
-          <small>需要具备 Compute Viewer 权限。私钥只保存在本机 data 目录（0600）。</small>
+          <span data-i18n="label.serviceAccount">服务账号 JSON（Google Cloud）</span>
+          <textarea class="input" id="ct-credentials" rows="5" placeholder="粘贴服务账号 JSON，留空表示不修改已保存的凭据" data-i18n-placeholder="placeholder.serviceAccount" autocomplete="off"></textarea>
+          <small data-i18n="ct.gcpHint">需要具备 Compute Viewer 权限。私钥只保存在本机 data 目录（0600）。</small>
         </label>
         <label class="field checkbox-field span-2 cloud-insecure hidden">
           <input type="checkbox" id="ct-insecure">
-          <span>跳过 vCenter TLS 证书校验</span>
+          <span data-i18n="ct.insecure">跳过 vCenter TLS 证书校验</span>
         </label>
       </div>
 
       <fieldset class="schedule-box">
-        <legend>采集内容</legend>
+        <legend data-i18n="legend.collectItems">采集内容</legend>
         <div class="form-grid checks">
           <label class="field checkbox-field">
             <input type="checkbox" id="ct-collect-prefixes" checked>
-            <span>VPC / 子网 / 交换机网段</span>
+            <span data-i18n="ct.prefixes">VPC / 子网 / 交换机网段</span>
           </label>
           <label class="field checkbox-field">
             <input type="checkbox" id="ct-collect-instances" checked>
-            <span>实例 IP</span>
+            <span data-i18n="ct.instances">实例 IP</span>
           </label>
           <label class="field checkbox-field">
             <input type="checkbox" id="ct-collect-public" checked>
-            <span>弹性公网 IP</span>
+            <span data-i18n="ct.publicIps">弹性公网 IP</span>
           </label>
           <label class="field span-2">
-            <span>附加网段（可选，CIDR 逗号分隔）</span>
+            <span data-i18n="label.extraSubnets">附加网段（可选，CIDR 逗号分隔）</span>
             <input class="input" id="ct-extra-subnets" placeholder="172.16.0.0/16, 2001:db8::/64" autocomplete="off">
-            <small>vCenter API 不提供子网 CIDR，请在此手工填写；其他平台可用于补充未自动发现的网段。</small>
+            <small data-i18n="ct.extraHint">vCenter API 不提供子网 CIDR，请在此手工填写；其他平台可用于补充未自动发现的网段。</small>
           </label>
         </div>
       </fieldset>
 
       <fieldset class="schedule-box">
-        <legend>NetBox 归属与定时</legend>
+        <legend data-i18n="legend.netboxSchedule">NetBox 归属与定时</legend>
         <div class="form-grid">
           <label class="field">
-            <span>Site slug 覆盖（可选）</span>
+            <span data-i18n="label.siteOverride">Site slug 覆盖（可选）</span>
             <input class="input" id="ct-site" autocomplete="off">
           </label>
           <label class="field">
-            <span>定时间隔（分钟）</span>
+            <span data-i18n="label.scheduleInterval">定时间隔（分钟）</span>
             <input class="input" id="ct-schedule-interval" type="number" min="5" max="10080" step="1" value="60">
           </label>
           <label class="field checkbox-field span-2">
             <input type="checkbox" id="ct-schedule-enabled">
-            <span>启用定时采集并同步</span>
+            <span data-i18n="schedule.enable">启用定时采集并同步</span>
           </label>
         </div>
-        <p class="muted">到点后自动采集并写入 NetBox IPAM；若该目标已有排队或运行中的任务，本轮跳过。首次启用后会立即执行一次。</p>
+        <p class="muted" data-i18n="ct.scheduleHint">到点后自动采集并写入 NetBox IPAM；若该目标已有排队或运行中的任务，本轮跳过。首次启用后会立即执行一次。</p>
       </fieldset>
 
       <div class="form-actions">
-        <button class="btn" type="button" data-close-modal>取消</button>
-        <button class="btn primary" type="submit">保存</button>
+        <button class="btn" type="button" data-close-modal data-i18n="btn.cancel">取消</button>
+        <button class="btn primary" type="submit" data-i18n="btn.save">保存</button>
       </div>
     </form>
   </div>
@@ -700,18 +701,18 @@
   <div class="modal-backdrop" data-close-modal></div>
   <div class="modal-card">
     <div class="modal-head">
-      <h2>批量扫描设备</h2>
-      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+      <h2 data-i18n="modal.scan">批量扫描设备</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭" data-i18n-aria="modal.close">×</button>
     </div>
     <form id="scan-form">
       <div class="form-grid">
         <label class="field span-2">
-          <span>扫描网段（IPv4 CIDR，逗号分隔）</span>
+          <span data-i18n="label.scanSubnetsV4">扫描网段（IPv4 CIDR，逗号分隔）</span>
           <input class="input" id="sc-subnets" required placeholder="10.0.0.0/24" autocomplete="off">
-          <small>先 ICMP 探活，再用下面的协议与凭据逐台探测并采集；单次最多 256 个地址。</small>
+          <small data-i18n="scan.hint">先 ICMP 探活，再用下面的协议与凭据逐台探测并采集；单次最多 256 个地址。</small>
         </label>
         <label class="field">
-          <span>协议</span>
+          <span data-i18n="label.protocol">协议</span>
           <select class="input" id="sc-protocol">
             <option value="snmp">SNMP</option>
             <option value="ipmi">IPMI</option>
@@ -719,40 +720,40 @@
           </select>
         </label>
         <label class="field">
-          <span>端口</span>
+          <span data-i18n="label.port">端口</span>
           <input class="input" id="sc-port" type="number" min="0" max="65535" step="1" value="161">
         </label>
         <label class="field">
-          <span>Site slug（可选）</span>
+          <span data-i18n="label.siteOptional">Site slug（可选）</span>
           <input class="input" id="sc-site" autocomplete="off">
         </label>
         <label class="field">
-          <span>Device role（可选）</span>
+          <span data-i18n="label.roleOptional">Device role（可选）</span>
           <input class="input" id="sc-role" autocomplete="off">
         </label>
         <label class="field">
-          <span>Platform（可选）</span>
+          <span data-i18n="label.platformOptional">Platform（可选）</span>
           <input class="input" id="sc-platform" autocomplete="off">
         </label>
         <label class="field">
-          <span>名称前缀（可选）</span>
-          <input class="input" id="sc-name-prefix" placeholder="例如 office" autocomplete="off">
+          <span data-i18n="label.namePrefix">名称前缀（可选）</span>
+          <input class="input" id="sc-name-prefix" placeholder="例如 office" data-i18n-placeholder="placeholder.namePrefix" autocomplete="off">
         </label>
         <label class="field checkbox-field">
           <input type="checkbox" id="sc-enabled" checked>
-          <span>新目标默认启用</span>
+          <span data-i18n="scan.enableNew">新目标默认启用</span>
         </label>
         <label class="field checkbox-field">
           <input type="checkbox" id="sc-sync">
-          <span>发现后立即采集并同步到 NetBox</span>
+          <span data-i18n="scan.syncNow">发现后立即采集并同步到 NetBox</span>
         </label>
       </div>
 
       <fieldset class="scan-proto scan-proto-snmp">
-        <legend>SNMP 凭据</legend>
+        <legend data-i18n="legend.snmpCreds">SNMP 凭据</legend>
         <div class="form-grid">
           <label class="field">
-            <span>版本</span>
+            <span data-i18n="label.version">版本</span>
             <select class="input" id="sc-s-version">
               <option value="v2c">v2c</option>
               <option value="v1">v1</option>
@@ -764,11 +765,11 @@
             <input class="input" id="sc-s-community" type="password" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>v3 用户名</span>
+            <span data-i18n="label.v3user">v3 用户名</span>
             <input class="input" id="sc-s-v3-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>v3 认证协议</span>
+            <span data-i18n="label.v3authProto">v3 认证协议</span>
             <select class="input" id="sc-s-v3-auth-proto">
               <option value="SHA256">SHA256</option>
               <option value="SHA">SHA1</option>
@@ -779,11 +780,11 @@
             </select>
           </label>
           <label class="field">
-            <span>v3 认证密码</span>
+            <span data-i18n="label.v3authPass">v3 认证密码</span>
             <input class="input" id="sc-s-v3-auth-pass" type="password" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>v3 加密协议</span>
+            <span data-i18n="label.v3privProto">v3 加密协议</span>
             <select class="input" id="sc-s-v3-priv-proto">
               <option value="AES">AES</option>
               <option value="DES">DES</option>
@@ -792,25 +793,25 @@
             </select>
           </label>
           <label class="field">
-            <span>v3 加密密码</span>
+            <span data-i18n="label.v3privPass">v3 加密密码</span>
             <input class="input" id="sc-s-v3-priv-pass" type="password" autocomplete="new-password">
           </label>
         </div>
       </fieldset>
 
       <fieldset class="scan-proto scan-proto-ipmi hidden">
-        <legend>IPMI 凭据</legend>
+        <legend data-i18n="legend.ipmiCreds">IPMI 凭据</legend>
         <div class="form-grid">
           <label class="field">
-            <span>用户名</span>
+            <span data-i18n="label.username">用户名</span>
             <input class="input" id="sc-i-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>密码</span>
+            <span data-i18n="label.password">密码</span>
             <input class="input" id="sc-i-pass" type="password" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>接口</span>
+            <span data-i18n="label.interface">接口</span>
             <select class="input" id="sc-i-interface">
               <option value="lanplus">lanplus (IPMI 2.0)</option>
               <option value="lan">lan (IPMI 1.5)</option>
@@ -820,30 +821,30 @@
       </fieldset>
 
       <fieldset class="scan-proto scan-proto-redfish hidden">
-        <legend>Redfish 凭据</legend>
+        <legend data-i18n="legend.redfishCreds">Redfish 凭据</legend>
         <div class="form-grid">
           <label class="field">
-            <span>用户名</span>
+            <span data-i18n="label.username">用户名</span>
             <input class="input" id="sc-r-user" autocomplete="off">
           </label>
           <label class="field">
-            <span>密码</span>
+            <span data-i18n="label.password">密码</span>
             <input class="input" id="sc-r-pass" type="password" autocomplete="new-password">
           </label>
           <label class="field">
-            <span>System ID（可选）</span>
+            <span data-i18n="label.systemId">System ID（可选）</span>
             <input class="input" id="sc-r-system" placeholder="1" autocomplete="off">
           </label>
           <label class="field checkbox-field">
             <input type="checkbox" id="sc-r-insecure">
-            <span>跳过 TLS 证书校验</span>
+            <span data-i18n="label.skipTls">跳过 TLS 证书校验</span>
           </label>
         </div>
       </fieldset>
 
       <div class="form-actions">
-        <button class="btn" type="button" data-close-modal>取消</button>
-        <button class="btn primary" type="submit">开始扫描</button>
+        <button class="btn" type="button" data-close-modal data-i18n="btn.cancel">取消</button>
+        <button class="btn primary" type="submit" data-i18n="btn.startScan">开始扫描</button>
       </div>
     </form>
   </div>
@@ -854,16 +855,17 @@
   <aside class="drawer-panel">
     <div class="drawer-head">
       <div>
-        <h2 id="job-title">任务详情</h2>
+        <h2 id="job-title" data-i18n="drawer.title">任务详情</h2>
         <p id="job-subtitle" class="muted"></p>
       </div>
-      <button class="icon-btn" type="button" data-close-drawer aria-label="关闭">×</button>
+      <button class="icon-btn" type="button" data-close-drawer aria-label="关闭" data-i18n-aria="modal.close">×</button>
     </div>
     <div class="drawer-body" id="job-body"></div>
   </aside>
 </div>
 
 <div class="toasts" id="toasts"></div>
+<script src="/i18n.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
 </html>

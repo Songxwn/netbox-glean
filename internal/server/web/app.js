@@ -27,21 +27,48 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
   "'": '&#39;',
 }[ch]));
 
-const protocolLabels = { snmp: 'SNMP', ipmi: 'IPMI', redfish: 'Redfish', ipscan: 'IP 采集', scan: '设备扫描', cloud: '云资产' };
-const modeLabels = { collect: '采集预览', sync: '采集并同步', scan: '批量扫描' };
-const cloudProviderLabels = {
-  vcenter: 'VMware vCenter',
-  aliyun: '阿里云',
-  tencent: '腾讯云',
-  huawei: '华为云',
-  aws: 'AWS',
-  gcp: 'Google Cloud',
-  volcengine: '火山引擎',
-};
-const cloudPrefixKindLabels = { vpc: 'VPC', subnet: '子网', switch: '交换机', manual: '手动' };
-const triggerLabels = { manual: '手动', schedule: '定时', scan: '扫描' };
-const statusLabels = { queued: '排队', running: '运行中', success: '成功', error: '失败' };
-const scanStatusLabels = { added: '新增', existing: '已存在', skipped: '跳过', failed: '失败' };
+function protocolLabel(protocol) {
+  const labels = { snmp: 'SNMP', ipmi: 'IPMI', redfish: 'Redfish', ipscan: t('protocol.ipscan'), scan: t('protocol.scan'), cloud: t('protocol.cloud') };
+  return labels[protocol] || protocol;
+}
+
+function modeLabel(mode) {
+  const labels = { collect: t('mode.collect'), sync: t('mode.sync'), scan: t('mode.scan') };
+  return labels[mode] || mode;
+}
+
+function cloudProviderLabel(provider) {
+  const labels = {
+    vcenter: t('provider.vcenter'),
+    aliyun: t('provider.aliyun'),
+    tencent: t('provider.tencent'),
+    huawei: t('provider.huawei'),
+    aws: t('provider.aws'),
+    gcp: t('provider.gcp'),
+    volcengine: t('provider.volcengine'),
+  };
+  return labels[provider] || provider;
+}
+
+function cloudPrefixKindLabel(kind) {
+  const labels = { vpc: 'VPC', subnet: t('kind.subnet'), switch: t('kind.switch'), manual: t('kind.manual') };
+  return labels[kind] || kind;
+}
+
+function triggerLabel(trigger) {
+  const labels = { manual: t('trigger.manual'), schedule: t('trigger.schedule'), scan: t('trigger.scan') };
+  return labels[trigger] || t('trigger.manual');
+}
+
+function statusLabel(status) {
+  const labels = { queued: t('status.queued'), running: t('status.running'), success: t('status.success'), error: t('status.error') };
+  return labels[status] || status;
+}
+
+function scanStatusLabel(status) {
+  const labels = { added: t('scanStatus.added'), existing: t('scanStatus.existing'), skipped: t('scanStatus.skipped'), failed: t('scanStatus.failed') };
+  return labels[status] || status;
+}
 
 async function api(path, options = {}) {
   const headers = Object.assign({}, options.headers || {});
@@ -100,12 +127,12 @@ function fmtTime(value) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('zh-CN', { hour12: false });
+  return date.toLocaleString(currentLang() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
 }
 
 function fmtDuration(job) {
   if (!job || !job.started_at) return '—';
-  if (!job.finished_at) return job.status === 'running' ? '进行中' : '—';
+  if (!job.finished_at) return job.status === 'running' ? t('duration.running') : '—';
   const ms = new Date(job.finished_at) - new Date(job.started_at);
   if (Number.isNaN(ms) || ms < 0) return '—';
   if (ms < 1000) return `${ms} ms`;
@@ -115,17 +142,17 @@ function fmtDuration(job) {
 
 function minutesLabel(minutes) {
   const value = Number(minutes) || 60;
-  if (value % 1440 === 0) return `${value / 1440} 天`;
-  if (value % 60 === 0) return `${value / 60} 小时`;
-  return `${value} 分钟`;
+  if (value % 1440 === 0) return t('duration.days', { n: value / 1440 });
+  if (value % 60 === 0) return t('duration.hours', { n: value / 60 });
+  return t('duration.minutes', { n: value });
 }
 
 function scheduleCell(target) {
-  if (!target.schedule_enabled) return '<span class="muted">关闭</span>';
+  if (!target.schedule_enabled) return `<span class="muted">${t('schedule.off')}</span>`;
   const last = target.last_run_at
-    ? `<div class="muted">上次 ${esc(fmtTime(target.last_run_at))}</div>`
-    : '<div class="muted">等待首次执行</div>';
-  return `<span class="badge badge-success">每 ${minutesLabel(target.schedule_interval_minutes)}</span>${last}`;
+    ? `<div class="muted">${t('schedule.last', { time: esc(fmtTime(target.last_run_at)) })}</div>`
+    : `<div class="muted">${t('schedule.waiting')}</div>`;
+  return `<span class="badge badge-success">${t('schedule.every', { interval: esc(minutesLabel(target.schedule_interval_minutes)) })}</span>${last}`;
 }
 
 function ipTargetTypeCell(target) {
@@ -137,16 +164,16 @@ function ipTargetTypeCell(target) {
 
 function ipTargetSubnetsCell(target) {
   const subnets = String(target.subnets || '').split(/[,\s;]+/).filter(Boolean);
-  if (subnets.length === 0) return '<span class="muted">仅 ARP/NDP</span>';
+  if (subnets.length === 0) return `<span class="muted">${t('ip.arpOnly')}</span>`;
   return `<span class="mono">${esc(subnets.join(', '))}</span>`;
 }
 
 function statusBadge(status) {
-  return `<span class="badge badge-${esc(status)}">${esc(statusLabels[status] || status)}</span>`;
+  return `<span class="badge badge-${esc(status)}">${esc(statusLabel(status))}</span>`;
 }
 
 function protocolBadge(protocol) {
-  return `<span class="badge badge-protocol">${esc(protocolLabels[protocol] || protocol)}</span>`;
+  return `<span class="badge badge-protocol">${esc(protocolLabel(protocol))}</span>`;
 }
 
 function setPage(page) {
@@ -158,12 +185,12 @@ function setPage(page) {
   const section = $(`page-${page}`);
   if (section) section.classList.remove('hidden');
   const titles = {
-    dashboard: ['概览', '通过 SNMP / IPMI / Redfish 采集设备硬件信息并写入 NetBox'],
-    targets: ['采集目标', '管理设备地址、凭据、NetBox 归属与批量扫描'],
-    iptargets: ['IP 采集', '独立读取 ARP/NDP 表或扫描网段，把 IP 写入 NetBox IPAM'],
-    cloudtargets: ['云资产采集', '从 vCenter 与公有云读取 VPC/子网网段、实例 IP 和弹性公网 IP'],
-    jobs: ['任务记录', '查看采集日志、硬件摘要、扫描结果与 NetBox 同步结果'],
-    settings: ['设置', '配置 NetBox 连接、默认归属和同步行为'],
+    dashboard: [t('page.dashboard.title'), t('page.dashboard.subtitle')],
+    targets: [t('page.targets.title'), t('page.targets.subtitle')],
+    iptargets: [t('page.iptargets.title'), t('page.iptargets.subtitle')],
+    cloudtargets: [t('page.cloudtargets.title'), t('page.cloudtargets.subtitle')],
+    jobs: [t('page.jobs.title'), t('page.jobs.subtitle')],
+    settings: [t('page.settings.title'), t('page.settings.subtitle')],
   };
   const [title, subtitle] = titles[page] || ['netbox-glean', ''];
   $('page-title').textContent = title;
@@ -197,7 +224,7 @@ async function boot() {
     renderAll();
     startPolling();
   } catch (err) {
-    toast(`加载失败: ${err.message}`, 'error');
+    toast(t('toast.loadFailed', { msg: err.message }), 'error');
   }
 }
 
@@ -248,9 +275,13 @@ function renderDashboard() {
   const stats = state.stats || {};
   const jobs = stats.jobs || {};
   $('stat-targets').textContent = stats.targets ?? state.targets.length;
-  $('stat-targets-hint').textContent = `启用 ${stats.targets_enabled ?? state.targets.filter((t) => t.enabled).length} 个 · IP 采集 ${stats.ip_targets ?? state.ipTargets.length} 个 · 云资产 ${stats.cloud_targets ?? state.cloudTargets.length} 个`;
+  $('stat-targets-hint').textContent = t('stat.targetsHint', {
+    enabled: stats.targets_enabled ?? state.targets.filter((x) => x.enabled).length,
+    ip: stats.ip_targets ?? state.ipTargets.length,
+    cloud: stats.cloud_targets ?? state.cloudTargets.length,
+  });
   $('stat-running').textContent = jobs.running ?? 0;
-  $('stat-queued').textContent = `排队 ${jobs.queued ?? 0} 个`;
+  $('stat-queued').textContent = t('stat.queuedHint', { n: jobs.queued ?? 0 });
   $('stat-success').textContent = jobs.success ?? 0;
   $('stat-error').textContent = jobs.error ?? 0;
 
@@ -259,7 +290,7 @@ function renderDashboard() {
     const count = byProtocol[protocol] || 0;
     const total = Math.max(1, ...['snmp', 'ipmi', 'redfish'].map((p) => byProtocol[p] || 0));
     return `<div class="protocol-row">
-      <span class="badge badge-protocol">${protocolLabels[protocol]}</span>
+      <span class="badge badge-protocol">${protocolLabel(protocol)}</span>
       <span class="bar"><span style="width:${Math.round((count / total) * 100)}%"></span></span>
       <strong>${count}</strong>
     </div>`;
@@ -268,8 +299,8 @@ function renderDashboard() {
 
   const settings = state.settings || {};
   const stateText = stats.netbox_configured
-    ? `NetBox: ${esc(settings.netbox_url || '已配置')}${settings.site ? ` · site <span class="mono">${esc(settings.site)}</span>` : ' · 未设置 site'}`
-    : 'NetBox 尚未配置，请前往“设置”填写 URL 与 Token。';
+    ? `NetBox: ${esc(settings.netbox_url || t('netbox.configuredLabel'))}${settings.site ? ` · site <span class="mono">${esc(settings.site)}</span>` : t('netbox.noSite')}`
+    : t('netbox.notConfigured');
   $('netbox-state').innerHTML = stateText;
 
   const recent = state.jobs.slice(0, 8);
@@ -277,7 +308,7 @@ function renderDashboard() {
   $('recent-jobs').innerHTML = recent.map((job) => `
     <tr data-job-id="${esc(job.id)}" style="cursor:pointer">
       <td>${esc(job.target_name)}<div class="muted mono">${esc(job.id)}</div></td>
-      <td>${esc(modeLabels[job.mode] || job.mode)}${job.trigger === 'schedule' ? ' · 定时' : ''}</td>
+      <td>${esc(modeLabel(job.mode))}${job.trigger === 'schedule' ? t('trigger.scheduledSuffix') : ''}</td>
       <td>${statusBadge(job.status)}</td>
       <td class="muted">${esc(fmtTime(job.created_at))}</td>
     </tr>
@@ -286,15 +317,13 @@ function renderDashboard() {
 
 function renderTargets() {
   const search = state.search.toLowerCase();
-  const targets = state.targets.filter((t) => {
+  const targets = state.targets.filter((target) => {
     if (!search) return true;
-    return `${t.name} ${t.address} ${t.device_name || ''}`.toLowerCase().includes(search);
+    return `${target.name} ${target.address} ${target.device_name || ''}`.toLowerCase().includes(search);
   });
   const empty = $('targets-empty');
   empty.classList.toggle('hidden', targets.length > 0);
-  empty.textContent = state.targets.length === 0
-    ? '还没有采集目标。点击“新增目标”开始，需要先在设置中配置 NetBox。'
-    : '没有匹配的目标。';
+  empty.textContent = state.targets.length === 0 ? t('targets.empty') : t('targets.noMatch');
 
   $('targets-body').innerHTML = targets.map((target) => `
     <tr>
@@ -304,16 +333,16 @@ function renderTargets() {
       </td>
       <td>${protocolBadge(target.protocol)}</td>
       <td class="mono">${esc(target.address)}:${esc(target.port)}</td>
-      <td>${target.site ? `<span class="mono">${esc(target.site)}</span>` : '<span class="muted">默认</span>'}</td>
-      <td>${target.device_name ? esc(target.device_name) : '<span class="muted">自动</span>'}</td>
+      <td>${target.site ? `<span class="mono">${esc(target.site)}</span>` : `<span class="muted">${t('cell.default')}</span>`}</td>
+      <td>${target.device_name ? esc(target.device_name) : `<span class="muted">${t('cell.auto')}</span>`}</td>
       <td>${scheduleCell(target)}</td>
-      <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
+      <td>${target.enabled ? `<span class="badge badge-success">${t('badge.enabled')}</span>` : `<span class="badge badge-queued">${t('badge.disabled')}</span>`}</td>
       <td>
         <div class="actions">
-          <button class="btn small" data-action="collect" data-id="${esc(target.id)}">采集</button>
-          <button class="btn small primary" data-action="sync" data-id="${esc(target.id)}">同步</button>
-          <button class="btn small" data-action="edit" data-id="${esc(target.id)}">编辑</button>
-          <button class="btn small danger" data-action="delete" data-id="${esc(target.id)}">删除</button>
+          <button class="btn small" data-action="collect" data-id="${esc(target.id)}">${t('action.collect')}</button>
+          <button class="btn small primary" data-action="sync" data-id="${esc(target.id)}">${t('action.sync')}</button>
+          <button class="btn small" data-action="edit" data-id="${esc(target.id)}">${t('action.edit')}</button>
+          <button class="btn small danger" data-action="delete" data-id="${esc(target.id)}">${t('action.delete')}</button>
         </div>
       </td>
     </tr>
@@ -322,15 +351,13 @@ function renderTargets() {
 
 function renderIPTargets() {
   const search = state.ipSearch.toLowerCase();
-  const targets = state.ipTargets.filter((t) => {
+  const targets = state.ipTargets.filter((target) => {
     if (!search) return true;
-    return `${t.name} ${t.subnets || ''} ${t.address || ''}`.toLowerCase().includes(search);
+    return `${target.name} ${target.subnets || ''} ${target.address || ''}`.toLowerCase().includes(search);
   });
   const empty = $('ip-targets-empty');
   empty.classList.toggle('hidden', targets.length > 0);
-  empty.textContent = state.ipTargets.length === 0
-    ? '还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4/IPv6 网段，并把结果写入 NetBox IPAM。'
-    : '没有匹配的目标。';
+  empty.textContent = state.ipTargets.length === 0 ? t('ip.empty') : t('targets.noMatch');
 
   $('ip-targets-body').innerHTML = targets.map((target) => `
     <tr>
@@ -341,13 +368,13 @@ function renderIPTargets() {
       <td>${ipTargetTypeCell(target)}</td>
       <td>${ipTargetSubnetsCell(target)}</td>
       <td>${scheduleCell(target)}</td>
-      <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
+      <td>${target.enabled ? `<span class="badge badge-success">${t('badge.enabled')}</span>` : `<span class="badge badge-queued">${t('badge.disabled')}</span>`}</td>
       <td>
         <div class="actions">
-          <button class="btn small" data-ip-action="collect" data-id="${esc(target.id)}">采集</button>
-          <button class="btn small primary" data-ip-action="sync" data-id="${esc(target.id)}">同步</button>
-          <button class="btn small" data-ip-action="edit" data-id="${esc(target.id)}">编辑</button>
-          <button class="btn small danger" data-ip-action="delete" data-id="${esc(target.id)}">删除</button>
+          <button class="btn small" data-ip-action="collect" data-id="${esc(target.id)}">${t('action.collect')}</button>
+          <button class="btn small primary" data-ip-action="sync" data-id="${esc(target.id)}">${t('action.sync')}</button>
+          <button class="btn small" data-ip-action="edit" data-id="${esc(target.id)}">${t('action.edit')}</button>
+          <button class="btn small danger" data-ip-action="delete" data-id="${esc(target.id)}">${t('action.delete')}</button>
         </div>
       </td>
     </tr>
@@ -356,15 +383,13 @@ function renderIPTargets() {
 
 function renderCloudTargets() {
   const search = state.cloudSearch.toLowerCase();
-  const targets = state.cloudTargets.filter((t) => {
+  const targets = state.cloudTargets.filter((target) => {
     if (!search) return true;
-    return `${t.name} ${t.provider || ''} ${t.region || ''} ${t.endpoint || ''} ${t.project || ''}`.toLowerCase().includes(search);
+    return `${target.name} ${target.provider || ''} ${target.region || ''} ${target.endpoint || ''} ${target.project || ''}`.toLowerCase().includes(search);
   });
   const empty = $('cloud-targets-empty');
   empty.classList.toggle('hidden', targets.length > 0);
-  empty.textContent = state.cloudTargets.length === 0
-    ? '还没有云资产采集目标。支持 VMware vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud 与火山引擎，可采集 VPC/子网网段、实例 IP 和弹性公网 IP 并写入 NetBox IPAM。'
-    : '没有匹配的云资产目标。';
+  empty.textContent = state.cloudTargets.length === 0 ? t('cloud.empty') : t('cloud.noMatch');
 
   $('cloud-targets-body').innerHTML = targets.map((target) => `
     <tr>
@@ -372,17 +397,17 @@ function renderCloudTargets() {
         <strong>${esc(target.name)}</strong>
         <div class="muted mono">${esc(cloudAccountLabel(target))}</div>
       </td>
-      <td><span class="badge badge-protocol">${esc(cloudProviderLabels[target.provider] || target.provider)}</span></td>
+      <td><span class="badge badge-protocol">${esc(cloudProviderLabel(target.provider))}</span></td>
       <td>${target.region ? `<span class="mono">${esc(target.region)}</span>` : '<span class="muted">—</span>'}</td>
       <td>${cloudTargetCollectCell(target)}</td>
       <td>${scheduleCell(target)}</td>
-      <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
+      <td>${target.enabled ? `<span class="badge badge-success">${t('badge.enabled')}</span>` : `<span class="badge badge-queued">${t('badge.disabled')}</span>`}</td>
       <td>
         <div class="actions">
-          <button class="btn small" data-cloud-action="collect" data-id="${esc(target.id)}">采集</button>
-          <button class="btn small primary" data-cloud-action="sync" data-id="${esc(target.id)}">同步</button>
-          <button class="btn small" data-cloud-action="edit" data-id="${esc(target.id)}">编辑</button>
-          <button class="btn small danger" data-cloud-action="delete" data-id="${esc(target.id)}">删除</button>
+          <button class="btn small" data-cloud-action="collect" data-id="${esc(target.id)}">${t('action.collect')}</button>
+          <button class="btn small primary" data-cloud-action="sync" data-id="${esc(target.id)}">${t('action.sync')}</button>
+          <button class="btn small" data-cloud-action="edit" data-id="${esc(target.id)}">${t('action.edit')}</button>
+          <button class="btn small danger" data-cloud-action="delete" data-id="${esc(target.id)}">${t('action.delete')}</button>
         </div>
       </td>
     </tr>
@@ -394,20 +419,20 @@ function cloudAccountLabel(target) {
   if (target.project) parts.push(target.project);
   if (target.endpoint) parts.push(target.endpoint);
   if (!parts.length && target.access_key) parts.push(target.access_key);
-  return parts.join(' · ') || '默认 Endpoint';
+  return parts.join(' · ') || t('cloud.defaultEndpoint');
 }
 
 function cloudTargetCollectCell(target) {
   const parts = [];
-  if (target.collect_prefixes) parts.push('网段');
-  if (target.collect_instances) parts.push('实例 IP');
-  if (target.collect_public_ips) parts.push('公网 IP');
-  if (String(target.extra_subnets || '').trim()) parts.push('附加网段');
+  if (target.collect_prefixes) parts.push(t('collect.prefixes'));
+  if (target.collect_instances) parts.push(t('collect.instances'));
+  if (target.collect_public_ips) parts.push(t('collect.public'));
+  if (String(target.extra_subnets || '').trim()) parts.push(t('collect.extra'));
   return parts.length ? parts.map((p) => `<span class="badge badge-queued">${esc(p)}</span>`).join(' ') : '<span class="muted">—</span>';
 }
 
 function renderJobs() {
-  $('jobs-summary').textContent = `共 ${state.jobs.length} 条任务记录，保留在内存中，重启后清空。`;
+  $('jobs-summary').textContent = t('jobs.summary', { n: state.jobs.length });
   $('jobs-empty').classList.toggle('hidden', state.jobs.length > 0);
   $('jobs-body').innerHTML = state.jobs.map((job) => {
     const isScan = job.mode === 'scan';
@@ -416,13 +441,13 @@ function renderJobs() {
     <tr>
       <td><strong>${esc(job.target_name)}</strong><div class="muted mono">${esc(job.id)}</div></td>
       <td>${protocolBadge(job.protocol)}</td>
-      <td>${esc(modeLabels[job.mode] || job.mode)}${job.trigger === 'schedule' ? ' · 定时' : ''}</td>
+      <td>${esc(modeLabel(job.mode))}${job.trigger === 'schedule' ? t('trigger.scheduledSuffix') : ''}</td>
       <td>${statusBadge(job.status)}${job.error ? `<div class="muted">${esc(job.error.slice(0, 80))}</div>` : ''}</td>
-      <td>${isScan ? `存活 ${job.found || 0}` : isCloud ? `地址 ${job.found || 0}` : job.interfaces}</td>
-      <td>${isScan ? `新增 ${job.added || 0}` : isCloud ? `网段 ${job.added || 0}` : job.components}</td>
+      <td>${isScan ? t('jobs.alive', { n: job.found || 0 }) : isCloud ? t('jobs.addresses', { n: job.found || 0 }) : job.interfaces}</td>
+      <td>${isScan ? t('jobs.added', { n: job.added || 0 }) : isCloud ? t('jobs.prefixes', { n: job.added || 0 }) : job.components}</td>
       <td class="muted">${esc(fmtTime(job.started_at || job.created_at))}</td>
       <td class="muted">${esc(fmtDuration(job))}</td>
-      <td class="right"><button class="btn small" data-job="${esc(job.id)}">查看</button></td>
+      <td class="right"><button class="btn small" data-job="${esc(job.id)}">${t('action.view')}</button></td>
     </tr>
   `;
   }).join('');
@@ -432,8 +457,8 @@ function fillSettings(settings) {
   setVal('set-netbox-url', settings.netbox_url);
   setVal('set-netbox-token', '');
   $('set-netbox-token').placeholder = settings.netbox_token_set
-    ? '已保存 Token，留空表示不修改'
-    : '粘贴 v1 Token 或 v2 nbt_ Token';
+    ? t('token.placeholderSaved')
+    : t('token.placeholderPaste');
   setVal('set-token-version', settings.token_version || 'auto');
   setChecked('set-netbox-insecure', settings.netbox_insecure);
   setVal('set-site', settings.site);
@@ -466,15 +491,14 @@ async function reloadStats() {
 }
 
 async function collectTarget(target, sync) {
-  const verb = sync ? '采集并同步' : '采集';
-  if (sync && !confirm(`确定要采集并同步 ${target.name} 到 NetBox 吗？`)) return;
+  if (sync && !confirm(t('confirm.collectSync', { name: target.name }))) return;
   try {
     await api(`/api/targets/${target.id}/collect`, { method: 'POST', body: { sync } });
-    toast(`已提交${verb}任务: ${target.name}`, 'success');
+    toast(t(sync ? 'toast.submittedSync' : 'toast.submittedCollect', { name: target.name }), 'success');
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`${verb}失败: ${err.message}`, 'error');
+    toast(t(sync ? 'toast.syncFailed' : 'toast.collectFailed', { msg: err.message }), 'error');
   }
 }
 
@@ -492,27 +516,26 @@ async function reloadIPTargets() {
 }
 
 async function collectIPTarget(target, sync) {
-  const verb = sync ? '采集并同步' : '采集';
-  if (sync && !confirm(`确定要采集 ${target.name} 并同步到 NetBox IPAM 吗？`)) return;
+  if (sync && !confirm(t('confirm.collectSyncIpam', { name: target.name }))) return;
   try {
     await api(`/api/ip-targets/${target.id}/collect`, { method: 'POST', body: { sync } });
-    toast(`已提交${verb}任务: ${target.name}`, 'success');
+    toast(t(sync ? 'toast.submittedSync' : 'toast.submittedCollect', { name: target.name }), 'success');
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`${verb}失败: ${err.message}`, 'error');
+    toast(t(sync ? 'toast.syncFailed' : 'toast.collectFailed', { msg: err.message }), 'error');
   }
 }
 
 async function collectAllIPs(sync) {
-  if (sync && !confirm('确定要采集所有启用的 IP 采集目标并同步到 NetBox 吗？')) return;
+  if (sync && !confirm(t('confirm.collectAllIp'))) return;
   try {
     const result = await api('/api/ip-collect', { method: 'POST', body: { sync } });
-    toast(`已提交 ${result.count} 个 IP 采集任务`, 'success');
+    toast(t('toast.submittedIpCount', { n: result.count }), 'success');
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`提交失败: ${err.message}`, 'error');
+    toast(t('toast.submitFailed', { msg: err.message }), 'error');
   }
 }
 
@@ -523,33 +546,32 @@ async function reloadCloudTargets() {
 }
 
 async function collectCloudTarget(target, sync) {
-  const verb = sync ? '采集并同步' : '采集';
-  if (sync && !confirm(`确定要采集 ${target.name} 并同步到 NetBox IPAM 吗？`)) return;
+  if (sync && !confirm(t('confirm.collectSyncIpam', { name: target.name }))) return;
   try {
     await api(`/api/cloud-targets/${target.id}/collect`, { method: 'POST', body: { sync } });
-    toast(`已提交${verb}任务: ${target.name}`, 'success');
+    toast(t(sync ? 'toast.submittedSync' : 'toast.submittedCollect', { name: target.name }), 'success');
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`${verb}失败: ${err.message}`, 'error');
+    toast(t(sync ? 'toast.syncFailed' : 'toast.collectFailed', { msg: err.message }), 'error');
   }
 }
 
 async function collectAllCloud(sync) {
-  if (sync && !confirm('确定要采集所有启用的云资产目标并同步到 NetBox 吗？')) return;
+  if (sync && !confirm(t('confirm.collectAllCloud'))) return;
   try {
     const result = await api('/api/cloud-collect', { method: 'POST', body: { sync } });
-    toast(`已提交 ${result.count} 个云资产采集任务`, 'success');
+    toast(t('toast.submittedCloudCount', { n: result.count }), 'success');
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`提交失败: ${err.message}`, 'error');
+    toast(t('toast.submitFailed', { msg: err.message }), 'error');
   }
 }
 
 function openCloudTargetModal(target) {
   state.editingCloudId = target ? target.id : null;
-  $('cloud-target-modal-title').textContent = target ? `编辑云账号 · ${target.name}` : '新增云账号';
+  $('cloud-target-modal-title').textContent = target ? t('modal.editCloud', { name: target.name }) : t('modal.addCloud');
   setVal('ct-name', target ? target.name : '');
   setVal('ct-provider', target ? target.provider : 'aliyun');
   setChecked('ct-enabled', target ? target.enabled : true);
@@ -593,10 +615,10 @@ function toggleCloudProviderFields(provider) {
   show('.cloud-secret', !isGCP);
   show('.cloud-credentials', isGCP);
   show('.cloud-insecure', isVCenter);
-  $('ct-endpoint-label').textContent = isVCenter ? 'API Endpoint（必填）' : 'API Endpoint（可选）';
-  $('ct-project-label').textContent = isGCP ? 'Project ID' : 'Project ID（华为云）';
-  $('ct-access-label').textContent = isVCenter ? '用户名' : 'AccessKey / SecretId';
-  $('ct-secret-label').textContent = isVCenter ? '密码' : 'SecretKey / Secret';
+  $('ct-endpoint-label').textContent = isVCenter ? t('ct.endpointRequired') : t('ct.endpointOptional');
+  $('ct-project-label').textContent = isGCP ? 'Project ID' : t('ct.projectHuawei');
+  $('ct-access-label').textContent = isVCenter ? t('label.username') : t('ct.accessKey');
+  $('ct-secret-label').textContent = isVCenter ? t('label.password') : t('ct.secretKey');
 }
 
 async function saveCloudTarget(event) {
@@ -623,21 +645,21 @@ async function saveCloudTarget(event) {
   try {
     if (state.editingCloudId) {
       await api(`/api/cloud-targets/${state.editingCloudId}`, { method: 'PUT', body: target });
-      toast('云资产目标已更新', 'success');
+      toast(t('toast.cloudUpdated'), 'success');
     } else {
       await api('/api/cloud-targets', { method: 'POST', body: target });
-      toast('云资产目标已创建', 'success');
+      toast(t('toast.cloudCreated'), 'success');
     }
     closeCloudTargetModal();
     await reloadCloudTargets();
   } catch (err) {
-    toast(`保存失败: ${err.message}`, 'error');
+    toast(t('toast.saveFailed', { msg: err.message }), 'error');
   }
 }
 
 function openIPTargetModal(target) {
   state.editingIpId = target ? target.id : null;
-  $('ip-target-modal-title').textContent = target ? `编辑 IP 采集 · ${target.name}` : '新增 IP 采集';
+  $('ip-target-modal-title').textContent = target ? t('modal.editIp', { name: target.name }) : t('modal.addIp');
   const snmp = (target && target.snmp) || { version: 'v2c', v3_auth_protocol: 'SHA256', v3_priv_protocol: 'AES' };
   setVal('it-name', target ? target.name : '');
   setChecked('it-enabled', target ? target.enabled : true);
@@ -687,15 +709,15 @@ async function saveIPTarget(event) {
   try {
     if (state.editingIpId) {
       await api(`/api/ip-targets/${state.editingIpId}`, { method: 'PUT', body: target });
-      toast('IP 采集目标已更新', 'success');
+      toast(t('toast.ipUpdated'), 'success');
     } else {
       await api('/api/ip-targets', { method: 'POST', body: target });
-      toast('IP 采集目标已创建', 'success');
+      toast(t('toast.ipCreated'), 'success');
     }
     closeIPTargetModal();
     await reloadIPTargets();
   } catch (err) {
-    toast(`保存失败: ${err.message}`, 'error');
+    toast(t('toast.saveFailed', { msg: err.message }), 'error');
   }
 }
 
@@ -772,18 +794,18 @@ async function saveScan(event) {
   };
   try {
     await api('/api/scan', { method: 'POST', body: request });
-    toast('扫描任务已提交', 'success');
+    toast(t('toast.scanSubmitted'), 'success');
     closeScanModal();
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`提交扫描失败: ${err.message}`, 'error');
+    toast(t('toast.scanSubmitFailed', { msg: err.message }), 'error');
   }
 }
 
 function openTargetModal(target) {
   state.editingId = target ? target.id : null;
-  $('target-modal-title').textContent = target ? `编辑目标 · ${target.name}` : '新增目标';
+  $('target-modal-title').textContent = target ? t('modal.editTarget', { name: target.name }) : t('modal.addTarget');
   const snmp = (target && target.snmp) || { version: 'v2c', v3_auth_protocol: 'SHA256', v3_priv_protocol: 'AES' };
   const ipmi = (target && target.ipmi) || { interface: 'lanplus' };
   const redfish = (target && target.redfish) || {};
@@ -875,15 +897,15 @@ async function saveTarget(event) {
   try {
     if (state.editingId) {
       await api(`/api/targets/${state.editingId}`, { method: 'PUT', body: target });
-      toast('目标已更新', 'success');
+      toast(t('toast.targetUpdated'), 'success');
     } else {
       await api('/api/targets', { method: 'POST', body: target });
-      toast('目标已创建', 'success');
+      toast(t('toast.targetCreated'), 'success');
     }
     closeTargetModal();
     await reloadTargets();
   } catch (err) {
-    toast(`保存失败: ${err.message}`, 'error');
+    toast(t('toast.saveFailed', { msg: err.message }), 'error');
   }
 }
 
@@ -914,10 +936,10 @@ async function saveSettings(event) {
   try {
     state.settings = await api('/api/settings', { method: 'PUT', body: settings });
     fillSettings(state.settings);
-    toast('设置已保存', 'success');
+    toast(t('toast.settingsSaved'), 'success');
     renderDashboard();
   } catch (err) {
-    toast(`保存设置失败: ${err.message}`, 'error');
+    toast(t('toast.settingsSaveFailed', { msg: err.message }), 'error');
   }
 }
 
@@ -930,28 +952,31 @@ async function testNetbox() {
   };
   try {
     const result = await api('/api/settings/test', { method: 'POST', body: payload });
-    toast(`NetBox ${result.netbox_version || '已连接'} · 认证 ${result.auth_mode === '2' ? 'v2 Bearer' : 'v1 Token'}`, 'success');
+    toast(t('toast.netboxOk', {
+      version: result.netbox_version || t('netbox.connected'),
+      auth: result.auth_mode === '2' ? 'v2 Bearer' : 'v1 Token',
+    }), 'success');
   } catch (err) {
-    toast(`连接失败: ${err.message}`, 'error');
+    toast(t('toast.connectFailed', { msg: err.message }), 'error');
   }
 }
 
 async function collectAll(sync) {
-  if (sync && !confirm('确定要采集所有启用的目标并同步到 NetBox 吗？')) return;
+  if (sync && !confirm(t('confirm.collectAll'))) return;
   try {
     const result = await api('/api/collect', { method: 'POST', body: { sync } });
-    toast(`已提交 ${result.count} 个任务`, 'success');
+    toast(t('toast.submittedCount', { n: result.count }), 'success');
     await refreshJobs();
     setPage('jobs');
   } catch (err) {
-    toast(`提交失败: ${err.message}`, 'error');
+    toast(t('toast.submitFailed', { msg: err.message }), 'error');
   }
 }
 
 async function openJob(id) {
   state.openJobId = id;
   $('drawer-job').classList.remove('hidden');
-  $('job-body').innerHTML = '<p class="muted">加载中…</p>';
+  $('job-body').innerHTML = `<p class="muted">${t('job.loading')}</p>`;
   await refreshOpenJob();
 }
 
@@ -967,7 +992,7 @@ async function refreshOpenJob() {
 
 function renderJobDetail(job) {
   $('job-title').textContent = job.target_name;
-  $('job-subtitle').textContent = `${modeLabels[job.mode] || job.mode} · ${fmtTime(job.created_at)}`;
+  $('job-subtitle').textContent = `${modeLabel(job.mode)} · ${fmtTime(job.created_at)}`;
 
   const result = job.result || null;
   const sync = job.sync || null;
@@ -978,34 +1003,34 @@ function renderJobDetail(job) {
 
   const kv = `
     <dl class="kv">
-      <dt>任务 ID</dt><dd class="mono">${esc(job.id)}</dd>
-      <dt>协议</dt><dd>${protocolBadge(job.protocol)}</dd>
-      <dt>模式</dt><dd>${esc(modeLabels[job.mode] || job.mode)}</dd>
-      <dt>触发</dt><dd>${esc(triggerLabels[job.trigger] || '手动')}</dd>
-      <dt>创建 / 开始 / 结束</dt><dd>${esc(fmtTime(job.created_at))} / ${esc(fmtTime(job.started_at))} / ${esc(fmtTime(job.finished_at))}</dd>
-      <dt>耗时</dt><dd>${esc(fmtDuration(job))}</dd>
-      ${job.error ? `<dt>错误</dt><dd class="badge-error">${esc(job.error)}</dd>` : ''}
+      <dt>${t('kv.jobId')}</dt><dd class="mono">${esc(job.id)}</dd>
+      <dt>${t('kv.protocol')}</dt><dd>${protocolBadge(job.protocol)}</dd>
+      <dt>${t('kv.mode')}</dt><dd>${esc(modeLabel(job.mode))}</dd>
+      <dt>${t('kv.trigger')}</dt><dd>${esc(triggerLabel(job.trigger))}</dd>
+      <dt>${t('kv.times')}</dt><dd>${esc(fmtTime(job.created_at))} / ${esc(fmtTime(job.started_at))} / ${esc(fmtTime(job.finished_at))}</dd>
+      <dt>${t('kv.duration')}</dt><dd>${esc(fmtDuration(job))}</dd>
+      ${job.error ? `<dt>${t('kv.error')}</dt><dd class="badge-error">${esc(job.error)}</dd>` : ''}
     </dl>`;
 
   const identityBlock = isDeviceResult ? `
-    <h3 class="section-title">设备信息</h3>
+    <h3 class="section-title">${t('job.deviceInfo')}</h3>
     <dl class="kv">
-      <dt>名称</dt><dd>${esc(identity.name || '—')}</dd>
-      <dt>厂商 / 型号</dt><dd>${esc(identity.manufacturer || '—')} / ${esc(identity.model || '—')}</dd>
-      <dt>序列号 / 资产标签</dt><dd>${esc(identity.serial || '—')} / ${esc(identity.asset_tag || '—')}</dd>
-      <dt>电源状态</dt><dd>${esc(identity.power_state || '—')}</dd>
-      <dt>CPU</dt><dd>${esc(identity.cpu_model || '—')}${identity.cpu_cores ? ` · ${identity.cpu_cores} 核` : ''}</dd>
-      <dt>内存</dt><dd>${identity.memory_gb ? `${identity.memory_gb} GB` : '—'}</dd>
+      <dt>${t('kv.name')}</dt><dd>${esc(identity.name || '—')}</dd>
+      <dt>${t('kv.vendorModel')}</dt><dd>${esc(identity.manufacturer || '—')} / ${esc(identity.model || '—')}</dd>
+      <dt>${t('kv.serialAsset')}</dt><dd>${esc(identity.serial || '—')} / ${esc(identity.asset_tag || '—')}</dd>
+      <dt>${t('kv.power')}</dt><dd>${esc(identity.power_state || '—')}</dd>
+      <dt>CPU</dt><dd>${esc(identity.cpu_model || '—')}${identity.cpu_cores ? ` · ${t('job.cores', { n: identity.cpu_cores })}` : ''}</dd>
+      <dt>${t('kv.memory')}</dt><dd>${identity.memory_gb ? `${identity.memory_gb} GB` : '—'}</dd>
       <dt>BIOS / BMC</dt><dd>${esc(identity.bios_version || '—')} / ${esc(identity.bmc_version || '—')}</dd>
-      <dt>接口 / 组件</dt><dd>${(result.interfaces || []).length} / ${(result.components || []).length}</dd>
-    </dl>` : (job.mode === 'scan' || job.protocol === 'ipscan' || job.protocol === 'cloud' ? '' : '<p class="muted">尚无采集结果。</p>');
+      <dt>${t('kv.interfacesComponents')}</dt><dd>${(result.interfaces || []).length} / ${(result.components || []).length}</dd>
+    </dl>` : (job.mode === 'scan' || job.protocol === 'ipscan' || job.protocol === 'cloud' ? '' : `<p class="muted">${t('job.noResult')}</p>`);
 
   const neighborList = result && Array.isArray(result.neighbors) ? result.neighbors : [];
   const neighborBlock = neighborList.length ? `
-    <h3 class="section-title">LLDP 邻居</h3>
+    <h3 class="section-title">${t('job.lldp')}</h3>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>本端接口</th><th>远端设备</th><th>远端端口</th><th>端口描述</th></tr></thead>
+        <thead><tr><th>${t('th.localInterface')}</th><th>${t('th.remoteSystem')}</th><th>${t('th.remotePort')}</th><th>${t('th.portDesc')}</th></tr></thead>
         <tbody>${neighborList.map((n) => `<tr>
           <td class="mono">${esc(n.local_interface || '—')}</td>
           <td>${esc(n.remote_system || '—')}</td>
@@ -1017,10 +1042,10 @@ function renderJobDetail(job) {
 
   const ipList = result && Array.isArray(result.ip_addresses) ? result.ip_addresses : [];
   const ipBlock = ipList.length ? `
-    <h3 class="section-title">发现的 IP 地址</h3>
+    <h3 class="section-title">${t('job.foundIps')}</h3>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>地址</th><th>MAC</th><th>接口</th><th>来源</th></tr></thead>
+        <thead><tr><th>${t('th.address')}</th><th>${t('th.mac')}</th><th>${t('kv.interfaces')}</th><th>${t('th.source')}</th></tr></thead>
         <tbody>${ipList.slice(0, 200).map((entry) => `<tr>
           <td class="mono">${esc(entry.address || '—')}</td>
           <td class="mono">${esc(entry.mac || '—')}</td>
@@ -1029,49 +1054,49 @@ function renderJobDetail(job) {
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    ${ipList.length > 200 ? `<p class="muted">仅显示前 200 条，共 ${ipList.length} 条。</p>` : ''}` : '';
+    ${ipList.length > 200 ? `<p class="muted">${t('job.showFirst200', { n: ipList.length })}</p>` : ''}` : '';
 
   const warnings = [];
   if (result && Array.isArray(result.warnings)) warnings.push(...result.warnings);
   if (cloud && Array.isArray(cloud.warnings)) warnings.push(...cloud.warnings);
   if (sync && Array.isArray(sync.warnings)) warnings.push(...sync.warnings);
   const warningBlock = warnings.length
-    ? `<h3 class="section-title">警告</h3><ul class="list warn-list">${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`
+    ? `<h3 class="section-title">${t('job.warnings')}</h3><ul class="list warn-list">${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`
     : '';
 
   const deviceSync = Boolean(sync && (sync.device_id || sync.device_name));
   const syncBlock = sync ? `
-    <h3 class="section-title">NetBox 同步结果</h3>
+    <h3 class="section-title">${t('job.syncResult')}</h3>
     <dl class="kv">
-      ${deviceSync ? `<dt>设备</dt><dd>${esc(sync.device_name || '—')} (#${sync.device_id}) ${sync.device_url ? `· <a href="${esc(sync.device_url)}" target="_blank" rel="noreferrer">打开</a>` : ''}</dd>` : ''}
-      ${deviceSync ? `<dt>接口</dt><dd>新建 ${sync.interfaces_created} / 更新 ${sync.interfaces_updated}</dd>` : ''}
-      ${deviceSync ? `<dt>LLDP 连线</dt><dd>新建 ${sync.cables_created || 0} / 跳过 ${sync.cables_skipped || 0}</dd>` : ''}
-      <dt>IP 地址</dt><dd>新建 ${sync.ip_created || 0} / 分配 ${sync.ip_assigned || 0} / 跳过 ${sync.ip_skipped || 0}</dd>
-      ${(sync.prefix_created || sync.prefix_skipped) ? `<dt>网段</dt><dd>新建 ${sync.prefix_created || 0} / 已存在 ${sync.prefix_skipped || 0}</dd>` : ''}
-      ${deviceSync ? `<dt>硬件清单</dt><dd>新建 ${sync.inventory_created} / 更新 ${sync.inventory_updated}</dd>` : ''}
-      ${sync.ip_address ? `<dt>主 IP</dt><dd class="mono">${esc(sync.ip_address)}</dd>` : ''}
+      ${deviceSync ? `<dt>${t('kv.device')}</dt><dd>${esc(sync.device_name || '—')} (#${sync.device_id}) ${sync.device_url ? `· <a href="${esc(sync.device_url)}" target="_blank" rel="noreferrer">${t('job.open')}</a>` : ''}</dd>` : ''}
+      ${deviceSync ? `<dt>${t('kv.interfaces')}</dt><dd>${t('sync.createdUpdated', { created: sync.interfaces_created, updated: sync.interfaces_updated })}</dd>` : ''}
+      ${deviceSync ? `<dt>${t('kv.cables')}</dt><dd>${t('sync.createdSkipped', { created: sync.cables_created || 0, skipped: sync.cables_skipped || 0 })}</dd>` : ''}
+      <dt>${t('kv.ipAddresses')}</dt><dd>${t('sync.ipStats', { created: sync.ip_created || 0, assigned: sync.ip_assigned || 0, skipped: sync.ip_skipped || 0 })}</dd>
+      ${(sync.prefix_created || sync.prefix_skipped) ? `<dt>${t('kv.prefixes')}</dt><dd>${t('sync.prefixStats', { created: sync.prefix_created || 0, existing: sync.prefix_skipped || 0 })}</dd>` : ''}
+      ${deviceSync ? `<dt>${t('kv.inventory')}</dt><dd>${t('sync.createdUpdated', { created: sync.inventory_created, updated: sync.inventory_updated })}</dd>` : ''}
+      ${sync.ip_address ? `<dt>${t('kv.primaryIp')}</dt><dd class="mono">${esc(sync.ip_address)}</dd>` : ''}
     </dl>
     ${Array.isArray(sync.actions) && sync.actions.length ? `<ul class="list">${sync.actions.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
   ` : '';
 
   const scanStatsBlock = scan ? `
-    <h3 class="section-title">扫描结果</h3>
+    <h3 class="section-title">${t('job.scanResult')}</h3>
     <dl class="kv">
-      <dt>网段 / 协议</dt><dd class="mono">${esc(scan.subnets || '—')} · ${esc(protocolLabels[scan.protocol] || scan.protocol || '—')}</dd>
-      <dt>扫描 / 存活</dt><dd>${scan.scanned} / ${scan.alive}</dd>
-      <dt>新增 / 已存在</dt><dd>${scan.added} / ${scan.existing}</dd>
-      <dt>跳过 / 失败</dt><dd>${scan.skipped} / ${scan.failed}</dd>
+      <dt>${t('kv.scanSubnetsProtocol')}</dt><dd class="mono">${esc(scan.subnets || '—')} · ${esc(protocolLabel(scan.protocol) || '—')}</dd>
+      <dt>${t('kv.scannedAlive')}</dt><dd>${scan.scanned} / ${scan.alive}</dd>
+      <dt>${t('kv.addedExisting')}</dt><dd>${scan.added} / ${scan.existing}</dd>
+      <dt>${t('kv.skippedFailed')}</dt><dd>${scan.skipped} / ${scan.failed}</dd>
     </dl>
     ${Array.isArray(scan.warnings) && scan.warnings.length ? `<ul class="list warn-list">${scan.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
     ${Array.isArray(scan.devices) && scan.devices.length ? `
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>地址</th><th>名称</th><th>厂商 / 型号</th><th>状态</th><th>备注</th></tr></thead>
+        <thead><tr><th>${t('th.address')}</th><th>${t('th.name')}</th><th>${t('kv.vendorModel')}</th><th>${t('th.status')}</th><th>${t('th.remarks')}</th></tr></thead>
         <tbody>${scan.devices.map((d) => `<tr>
           <td class="mono">${esc(d.address || '—')}</td>
           <td>${esc(d.name || '—')}</td>
           <td>${esc(d.manufacturer || '—')} / ${esc(d.model || '—')}</td>
-          <td><span class="badge badge-${esc(d.status === 'added' ? 'success' : d.status === 'failed' ? 'error' : 'queued')}">${esc(scanStatusLabels[d.status] || d.status)}</span></td>
+          <td><span class="badge badge-${esc(d.status === 'added' ? 'success' : d.status === 'failed' ? 'error' : 'queued')}">${esc(scanStatusLabel(d.status))}</span></td>
           <td class="muted">${esc(d.error || '')}</td>
         </tr>`).join('')}</tbody>
       </table>
@@ -1081,41 +1106,41 @@ function renderJobDetail(job) {
   const prefixList = cloud && Array.isArray(cloud.prefixes) ? cloud.prefixes : [];
   const addressList = cloud && Array.isArray(cloud.addresses) ? cloud.addresses : [];
   const cloudBlock = cloud ? `
-    <h3 class="section-title">云资产采集结果</h3>
+    <h3 class="section-title">${t('job.cloudResult')}</h3>
     <dl class="kv">
-      <dt>云平台</dt><dd>${esc(cloudProviderLabels[cloud.provider] || cloud.provider || '—')}</dd>
-      <dt>VPC / 子网</dt><dd>${cloud.vpcs || 0} / ${cloud.subnets || 0}</dd>
-      <dt>实例 / 公网 IP</dt><dd>${cloud.instances || 0} / ${cloud.public_ips || 0}</dd>
-      <dt>网段 / 地址</dt><dd>${prefixList.length} / ${addressList.length}</dd>
+      <dt>${t('kv.provider')}</dt><dd>${esc(cloudProviderLabel(cloud.provider) || '—')}</dd>
+      <dt>${t('kv.vpcSubnets')}</dt><dd>${cloud.vpcs || 0} / ${cloud.subnets || 0}</dd>
+      <dt>${t('kv.instancesPublic')}</dt><dd>${cloud.instances || 0} / ${cloud.public_ips || 0}</dd>
+      <dt>${t('kv.prefixesAddresses')}</dt><dd>${prefixList.length} / ${addressList.length}</dd>
     </dl>
     ${prefixList.length ? `
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>网段</th><th>类型</th><th>名称</th><th>VPC</th><th>区域</th></tr></thead>
+        <thead><tr><th>${t('th.prefix')}</th><th>${t('th.kind')}</th><th>${t('th.name')}</th><th>${t('th.vpc')}</th><th>${t('th.region')}</th></tr></thead>
         <tbody>${prefixList.slice(0, 300).map((p) => `<tr>
           <td class="mono">${esc(p.cidr || '—')}</td>
-          <td>${esc(cloudPrefixKindLabels[p.kind] || p.kind || '—')}</td>
+          <td>${esc(cloudPrefixKindLabel(p.kind) || '—')}</td>
           <td>${esc(p.name || '—')}</td>
           <td class="mono">${esc(p.vpc || '—')}</td>
           <td class="muted">${esc(p.region || '—')}</td>
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    ${prefixList.length > 300 ? `<p class="muted">仅显示前 300 个网段，共 ${prefixList.length} 个。</p>` : ''}` : ''}
+    ${prefixList.length > 300 ? `<p class="muted">${t('job.showFirst300Prefixes', { n: prefixList.length })}</p>` : ''}` : ''}
     ${addressList.length ? `
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>地址</th><th>类型</th><th>名称 / 实例</th><th>接口 / MAC</th><th>区域</th></tr></thead>
+        <thead><tr><th>${t('th.address')}</th><th>${t('th.type')}</th><th>${t('th.nameInstance')}</th><th>${t('th.interfaceMac')}</th><th>${t('th.region')}</th></tr></thead>
         <tbody>${addressList.slice(0, 300).map((a) => `<tr>
           <td class="mono">${esc(a.address || '—')}</td>
-          <td>${a.public ? '<span class="badge badge-success">公网</span>' : '<span class="badge badge-queued">实例</span>'}</td>
+          <td>${a.public ? `<span class="badge badge-success">${t('badge.public')}</span>` : `<span class="badge badge-queued">${t('badge.instance')}</span>`}</td>
           <td>${esc(a.name || '—')}${a.instance_id ? `<div class="muted mono">${esc(a.instance_id)}</div>` : ''}</td>
           <td class="mono">${esc(a.interface || '—')}${a.mac ? ` / ${esc(a.mac)}` : ''}</td>
           <td class="muted">${esc(a.region || '—')}</td>
         </tr>`).join('')}</tbody>
       </table>
     </div>
-    ${addressList.length > 300 ? `<p class="muted">仅显示前 300 个地址，共 ${addressList.length} 个。</p>` : ''}` : ''}
+    ${addressList.length > 300 ? `<p class="muted">${t('job.showFirst300Addresses', { n: addressList.length })}</p>` : ''}` : ''}
   ` : '';
 
   const log = Array.isArray(job.log) && job.log.length
@@ -1123,7 +1148,7 @@ function renderJobDetail(job) {
     : '(no log)';
 
   $('job-body').innerHTML = `
-    <div class="job-status-head">${statusBadge(job.status)}${job.error ? '<span class="badge badge-error">查看错误</span>' : ''}</div>
+    <div class="job-status-head">${statusBadge(job.status)}${job.error ? `<span class="badge badge-error">${t('job.viewError')}</span>` : ''}</div>
     ${kv}
     ${syncBlock}
     ${scanStatsBlock}
@@ -1132,13 +1157,47 @@ function renderJobDetail(job) {
     ${neighborBlock}
     ${ipBlock}
     ${warningBlock}
-    <h3 class="section-title">任务日志</h3>
+    <h3 class="section-title">${t('job.log')}</h3>
     <pre class="log-box mono">${esc(log)}</pre>
     <details>
-      <summary class="muted" style="cursor:pointer;margin-top:14px">原始采集结果 JSON</summary>
+      <summary class="muted" style="cursor:pointer;margin-top:14px">${t('job.rawJson')}</summary>
       <pre class="json-box mono">${esc(JSON.stringify(result, null, 2) || 'null')}</pre>
     </details>
   `;
+}
+
+// refreshLanguage re-renders everything after a language switch.
+function refreshLanguage() {
+  applyStaticI18n();
+  renderAll();
+  setPage(state.page);
+  if (state.settings) {
+    $('set-netbox-token').placeholder = state.settings.netbox_token_set
+      ? t('token.placeholderSaved')
+      : t('token.placeholderPaste');
+  }
+  refreshModalTitles();
+  if (!$('modal-cloudtarget').classList.contains('hidden')) {
+    toggleCloudProviderFields(val('ct-provider'));
+  }
+  if (state.openJobId && !$('drawer-job').classList.contains('hidden')) {
+    refreshOpenJob();
+  }
+}
+
+function refreshModalTitles() {
+  if (!$('modal-target').classList.contains('hidden')) {
+    const target = state.targets.find((item) => item.id === state.editingId);
+    $('target-modal-title').textContent = target ? t('modal.editTarget', { name: target.name }) : t('modal.addTarget');
+  }
+  if (!$('modal-iptarget').classList.contains('hidden')) {
+    const target = state.ipTargets.find((item) => item.id === state.editingIpId);
+    $('ip-target-modal-title').textContent = target ? t('modal.editIp', { name: target.name }) : t('modal.addIp');
+  }
+  if (!$('modal-cloudtarget').classList.contains('hidden')) {
+    const target = state.cloudTargets.find((item) => item.id === state.editingCloudId);
+    $('cloud-target-modal-title').textContent = target ? t('modal.editCloud', { name: target.name }) : t('modal.addCloud');
+  }
 }
 
 function bindEvents() {
@@ -1149,6 +1208,7 @@ function bindEvents() {
     btn.addEventListener('click', () => setPage(btn.dataset.goto));
   });
 
+  $('btn-lang').addEventListener('click', () => setLang(currentLang() === 'zh' ? 'en' : 'zh'));
   $('btn-collect-all').addEventListener('click', () => collectAll(false));
   $('btn-sync-all').addEventListener('click', () => collectAll(true));
   $('btn-add-target').addEventListener('click', () => openTargetModal(null));
@@ -1164,10 +1224,10 @@ function bindEvents() {
   $('btn-clear-jobs').addEventListener('click', async () => {
     try {
       const result = await api('/api/jobs', { method: 'DELETE' });
-      toast(`已清理 ${result.removed} 条任务记录`, 'success');
+      toast(t('toast.cleared', { n: result.removed }), 'success');
       await refreshJobs();
     } catch (err) {
-      toast(`清理失败: ${err.message}`, 'error');
+      toast(t('toast.clearFailed', { msg: err.message }), 'error');
     }
   });
 
@@ -1224,13 +1284,13 @@ function bindEvents() {
         openTargetModal(target);
         break;
       case 'delete':
-        if (!confirm(`确定删除目标 ${target.name} 吗？`)) return;
+        if (!confirm(t('confirm.deleteTarget', { name: target.name }))) return;
         try {
           await api(`/api/targets/${target.id}`, { method: 'DELETE' });
-          toast('目标已删除', 'success');
+          toast(t('toast.targetDeleted'), 'success');
           await reloadTargets();
         } catch (err) {
-          toast(`删除失败: ${err.message}`, 'error');
+          toast(t('toast.deleteFailed', { msg: err.message }), 'error');
         }
         break;
       default:
@@ -1254,13 +1314,13 @@ function bindEvents() {
         openIPTargetModal(target);
         break;
       case 'delete':
-        if (!confirm(`确定删除 IP 采集目标 ${target.name} 吗？`)) return;
+        if (!confirm(t('confirm.deleteIp', { name: target.name }))) return;
         try {
           await api(`/api/ip-targets/${target.id}`, { method: 'DELETE' });
-          toast('IP 采集目标已删除', 'success');
+          toast(t('toast.ipDeleted'), 'success');
           await reloadIPTargets();
         } catch (err) {
-          toast(`删除失败: ${err.message}`, 'error');
+          toast(t('toast.deleteFailed', { msg: err.message }), 'error');
         }
         break;
       default:
@@ -1284,13 +1344,13 @@ function bindEvents() {
         openCloudTargetModal(target);
         break;
       case 'delete':
-        if (!confirm(`确定删除云资产目标 ${target.name} 吗？`)) return;
+        if (!confirm(t('confirm.deleteCloud', { name: target.name }))) return;
         try {
           await api(`/api/cloud-targets/${target.id}`, { method: 'DELETE' });
-          toast('云资产目标已删除', 'success');
+          toast(t('toast.cloudDeleted'), 'success');
           await reloadCloudTargets();
         } catch (err) {
-          toast(`删除失败: ${err.message}`, 'error');
+          toast(t('toast.deleteFailed', { msg: err.message }), 'error');
         }
         break;
       default:
@@ -1338,5 +1398,6 @@ function bindEvents() {
 
 document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
+  applyStaticI18n();
   boot();
 });
