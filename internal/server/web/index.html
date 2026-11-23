@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>netbox-glean</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="5" width="26" height="7" rx="2"></rect>
+        <rect x="3" y="20" width="26" height="7" rx="2"></rect>
+        <path d="M9 12v8M16 12v8M23 12v8"></path>
+      </svg>
+      <div>
+        <strong>netbox-glean</strong>
+        <span>硬件自动发现</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-page="dashboard">概览</button>
+      <button class="nav-item" data-page="targets">采集目标</button>
+      <button class="nav-item" data-page="jobs">任务记录</button>
+      <button class="nav-item" data-page="settings">设置</button>
+    </nav>
+    <div class="sidebar-foot">
+      <span id="version-label">dev</span>
+      <a href="/api/health" target="_blank" rel="noreferrer">健康检查</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">概览</h1>
+        <p id="page-subtitle">通过 SNMP / IPMI / Redfish 采集设备硬件信息并写入 NetBox</p>
+      </div>
+      <div class="top-actions">
+        <button class="btn" id="btn-collect-all">采集全部</button>
+        <button class="btn primary" id="btn-sync-all">同步全部</button>
+      </div>
+    </header>
+
+    <section class="page" id="page-dashboard">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">采集目标</span>
+          <strong id="stat-targets">0</strong>
+          <span class="stat-hint" id="stat-targets-hint">启用 0 个</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">运行中任务</span>
+          <strong id="stat-running">0</strong>
+          <span class="stat-hint" id="stat-queued">排队 0 个</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">成功任务</span>
+          <strong id="stat-success">0</strong>
+          <span class="stat-hint">历史记录</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">失败任务</span>
+          <strong id="stat-error">0</strong>
+          <span class="stat-hint">查看任务日志定位问题</span>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>最近任务</h2>
+            <button class="link-btn" data-goto="jobs">查看全部</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>目标</th><th>模式</th><th>状态</th><th>时间</th></tr>
+              </thead>
+              <tbody id="recent-jobs"></tbody>
+            </table>
+          </div>
+          <div class="empty hidden" id="recent-empty">还没有任务，先添加采集目标或点击“采集全部”。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>协议分布</h2></div>
+          <div class="protocol-list" id="protocol-list"></div>
+          <div class="netbox-state" id="netbox-state"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-targets">
+      <div class="toolbar">
+        <input class="input search" id="target-search" type="search" placeholder="搜索名称或地址">
+        <button class="btn primary" id="btn-add-target">新增目标</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>名称</th><th>协议</th><th>地址</th><th>Site</th>
+                <th>NetBox 设备</th><th>状态</th><th class="right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="targets-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="targets-empty">
+          还没有采集目标。点击“新增目标”开始，需要先在设置中配置 NetBox。
+        </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-jobs">
+      <div class="toolbar">
+        <span class="muted" id="jobs-summary">任务记录保留在内存中，重启后清空。</span>
+        <button class="btn" id="btn-clear-jobs">清理已完成</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>目标</th><th>协议</th><th>模式</th><th>状态</th>
+                <th>接口</th><th>组件</th><th>开始时间</th><th>耗时</th><th class="right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="jobs-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="jobs-empty">暂无任务记录。</div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-settings">
+      <form id="settings-form" class="settings-form">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>NetBox 连接</h2>
+            <button type="button" class="btn" id="btn-test-netbox">测试连接</button>
+          </div>
+          <div class="form-grid">
+            <label class="field span-2">
+              <span>NetBox URL</span>
+              <input class="input" id="set-netbox-url" placeholder="https://netbox.example.com" autocomplete="off">
+            </label>
+            <label class="field span-2">
+              <span>API Token</span>
+              <input class="input" id="set-netbox-token" type="password" placeholder="留空表示不修改已保存的 Token" autocomplete="new-password">
+              <small>支持 v1 Token 与 NetBox 4.5+ 的 v2 Bearer Token（nbt_ 前缀）。</small>
+            </label>
+            <label class="field">
+              <span>Token 版本</span>
+              <select class="input" id="set-token-version">
+                <option value="auto">自动识别</option>
+                <option value="1">v1（Token）</option>
+                <option value="2">v2（Bearer）</option>
+              </select>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-netbox-insecure">
+              <span>跳过 NetBox TLS 证书校验</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>写入默认值</h2></div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Site slug</span>
+              <input class="input" id="set-site" placeholder="dc1" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Site 名称（首次创建时使用）</span>
+              <input class="input" id="set-site-name" placeholder="DC1" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Device role slug</span>
+              <input class="input" id="set-device-role" placeholder="server" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Platform slug（可选）</span>
+              <input class="input" id="set-platform" placeholder="linux" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Device type U 高</span>
+              <input class="input" id="set-u-height" type="number" min="0" max="100" step="1">
+            </label>
+            <label class="field">
+              <span>设备描述</span>
+              <input class="input" id="set-description" placeholder="Managed by netbox-glean" autocomplete="off">
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>同步选项</h2></div>
+          <div class="form-grid checks">
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-sync-interfaces">
+              <span>同步网卡接口</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-sync-inventory">
+              <span>同步硬件清单</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-custom-fields">
+              <span>写入已存在的 glean_* 自定义字段</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-assign-ip">
+              <span>设置管理地址为主 IP</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-prune-interfaces">
+              <span>删除本次未采集到的接口（谨慎）</span>
+            </label>
+            <label class="field">
+              <span>管理接口名称</span>
+              <input class="input" id="set-primary-interface" placeholder="mgmt0" autocomplete="off">
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn primary" type="submit">保存设置</button>
+            <span class="muted">环境变量与启动参数仅在首次启动时作为初始值。</span>
+          </div>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div class="modal hidden" id="modal-target">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="target-modal-title">新增目标</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+    </div>
+    <form id="target-form">
+      <div class="form-grid">
+        <label class="field">
+          <span>名称</span>
+          <input class="input" id="t-name" required autocomplete="off">
+        </label>
+        <label class="field">
+          <span>协议</span>
+          <select class="input" id="t-protocol">
+            <option value="snmp">SNMP</option>
+            <option value="ipmi">IPMI</option>
+            <option value="redfish">Redfish</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>地址</span>
+          <input class="input" id="t-address" required placeholder="10.0.0.10" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>端口</span>
+          <input class="input" id="t-port" type="number" min="0" max="65535" step="1">
+        </label>
+        <label class="field">
+          <span>Site slug 覆盖（可选）</span>
+          <input class="input" id="t-site" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Device role 覆盖（可选）</span>
+          <input class="input" id="t-role" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Platform 覆盖（可选）</span>
+          <input class="input" id="t-platform" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>NetBox 设备名覆盖（可选）</span>
+          <input class="input" id="t-device-name" placeholder="留空则使用采集到的名称" autocomplete="off">
+        </label>
+        <label class="field span-2">
+          <span>描述</span>
+          <input class="input" id="t-description" autocomplete="off">
+        </label>
+        <label class="field checkbox-field span-2">
+          <input type="checkbox" id="t-enabled" checked>
+          <span>启用该目标（参与“采集全部”）</span>
+        </label>
+      </div>
+
+      <fieldset class="proto proto-snmp">
+        <legend>SNMP</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>版本</span>
+            <select class="input" id="s-version">
+              <option value="v2c">v2c</option>
+              <option value="v1">v1</option>
+              <option value="v3">v3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Community</span>
+            <input class="input" id="s-community" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>v3 用户名</span>
+            <input class="input" id="s-v3-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>v3 认证协议</span>
+            <select class="input" id="s-v3-auth-proto">
+              <option value="SHA256">SHA256</option>
+              <option value="SHA">SHA1</option>
+              <option value="MD5">MD5</option>
+              <option value="SHA224">SHA224</option>
+              <option value="SHA384">SHA384</option>
+              <option value="SHA512">SHA512</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>v3 认证密码</span>
+            <input class="input" id="s-v3-auth-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>v3 加密协议</span>
+            <select class="input" id="s-v3-priv-proto">
+              <option value="AES">AES</option>
+              <option value="DES">DES</option>
+              <option value="AES192">AES192</option>
+              <option value="AES256">AES256</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>v3 加密密码</span>
+            <input class="input" id="s-v3-priv-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="proto proto-ipmi hidden">
+        <legend>IPMI</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>用户名</span>
+            <input class="input" id="i-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input class="input" id="i-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>接口</span>
+            <select class="input" id="i-interface">
+              <option value="lanplus">lanplus (IPMI 2.0)</option>
+              <option value="lan">lan (IPMI 1.5)</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="proto proto-redfish hidden">
+        <legend>Redfish</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>用户名</span>
+            <input class="input" id="r-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input class="input" id="r-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>System ID（可选）</span>
+            <input class="input" id="r-system" placeholder="1" autocomplete="off">
+          </label>
+          <label class="field checkbox-field">
+            <input type="checkbox" id="r-insecure">
+            <span>跳过 TLS 证书校验</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="btn" type="button" data-close-modal>取消</button>
+        <button class="btn primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="drawer hidden" id="drawer-job">
+  <div class="drawer-backdrop" data-close-drawer></div>
+  <aside class="drawer-panel">
+    <div class="drawer-head">
+      <div>
+        <h2 id="job-title">任务详情</h2>
+        <p id="job-subtitle" class="muted"></p>
+      </div>
+      <button class="icon-btn" type="button" data-close-drawer aria-label="关闭">×</button>
+    </div>
+    <div class="drawer-body" id="job-body"></div>
+  </aside>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="/app.js" defer></script>
+</body>
+</html>

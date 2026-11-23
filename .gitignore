@@ -1,0 +1,20 @@
+# Runtime data (contains credentials)
+/data/
+*.db
+*.log
+
+# Build output
+/dist/
+/bin/
+/netbox-glean
+/netbox-glean.exe
+coverage.out
+coverage.html
+
+# Local tooling
+.env
+.env.*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
