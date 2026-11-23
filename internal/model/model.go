@@ -9,12 +9,18 @@ const (
 	ProtocolSNMP    = "snmp"
 	ProtocolIPMI    = "ipmi"
 	ProtocolRedfish = "redfish"
+
+	// ProtocolIPScan and ProtocolScan are pseudo protocols used by jobs that
+	// do not belong to a device target.
+	ProtocolIPScan = "ipscan"
+	ProtocolScan   = "scan"
 )
 
 // Job modes.
 const (
 	ModeCollect = "collect"
 	ModeSync    = "sync"
+	ModeScan    = "scan"
 )
 
 // Automatic collection defaults. Intervals are expressed in minutes.
@@ -88,10 +94,6 @@ type Target struct {
 	SNMP        SNMPConfig    `json:"snmp"`
 	IPMI        IPMIConfig    `json:"ipmi"`
 	Redfish     RedfishConfig `json:"redfish"`
-	// DiscoverIPs enables reading the device ARP/NDP table and, when
-	// ScanSubnets is set, sweeping those subnets with ICMP echo.
-	DiscoverIPs bool   `json:"discover_ips"`
-	ScanSubnets string `json:"scan_subnets,omitempty"`
 	// ScheduleEnabled turns on periodic collection + sync for this target.
 	ScheduleEnabled         bool       `json:"schedule_enabled"`
 	ScheduleIntervalMinutes int        `json:"schedule_interval_minutes,omitempty"`
@@ -100,24 +102,115 @@ type Target struct {
 	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
+// IPTarget is an independent IP discovery job. It can read ARP/NDP tables
+// from a network device over SNMP, sweep IPv4 subnets with ICMP, or both.
+type IPTarget struct {
+	ID      string     `json:"id"`
+	Name    string     `json:"name"`
+	Enabled bool       `json:"enabled"`
+	Subnets string     `json:"subnets,omitempty"`
+	Address string     `json:"address,omitempty"`
+	Port    int        `json:"port,omitempty"`
+	SNMP    SNMPConfig `json:"snmp"`
+	// ScheduleEnabled turns on periodic IP discovery + IPAM sync.
+	ScheduleEnabled         bool       `json:"schedule_enabled"`
+	ScheduleIntervalMinutes int        `json:"schedule_interval_minutes,omitempty"`
+	LastRunAt               *time.Time `json:"last_run_at,omitempty"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+}
+
+// ScanRequest configures one batch device scan.
+type ScanRequest struct {
+	Subnets    string        `json:"subnets"`
+	Protocol   string        `json:"protocol"`
+	Port       int           `json:"port,omitempty"`
+	SNMP       SNMPConfig    `json:"snmp"`
+	IPMI       IPMIConfig    `json:"ipmi"`
+	Redfish    RedfishConfig `json:"redfish"`
+	Site       string        `json:"site,omitempty"`
+	DeviceRole string        `json:"device_role,omitempty"`
+	Platform   string        `json:"platform,omitempty"`
+	NamePrefix string        `json:"name_prefix,omitempty"`
+	// Enabled controls whether newly added targets participate in batch and
+	// scheduled runs. Nil means enabled.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Sync starts a collect + sync job for every newly added target.
+	Sync bool `json:"sync"`
+}
+
+// ScanEnabled reports whether newly discovered targets should be enabled.
+func (r ScanRequest) ScanEnabled() bool {
+	return r.Enabled == nil || *r.Enabled
+}
+
+// ScannedDevice is one host handled by a batch scan.
+type ScannedDevice struct {
+	Address      string `json:"address"`
+	Name         string `json:"name,omitempty"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Model        string `json:"model,omitempty"`
+	Serial       string `json:"serial,omitempty"`
+	Status       string `json:"status"` // added, existing, skipped or failed
+	TargetID     string `json:"target_id,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+// ScanResult reports what a batch device scan found and added.
+type ScanResult struct {
+	Subnets  string          `json:"subnets"`
+	Protocol string          `json:"protocol"`
+	Scanned  int             `json:"scanned"`
+	Alive    int             `json:"alive"`
+	Added    int             `json:"added"`
+	Existing int             `json:"existing"`
+	Failed   int             `json:"failed"`
+	Skipped  int             `json:"skipped"`
+	Devices  []ScannedDevice `json:"devices,omitempty"`
+	Warnings []string        `json:"warnings,omitempty"`
+}
+
 // ScheduleInterval returns the normalized interval between scheduled runs.
 func (t Target) ScheduleInterval() time.Duration {
-	minutes := t.ScheduleIntervalMinutes
+	return normalizeScheduleMinutes(t.ScheduleIntervalMinutes)
+}
+
+func normalizeScheduleMinutes(minutes int) time.Duration {
+	return time.Duration(clampScheduleMinutes(minutes)) * time.Minute
+}
+
+func clampScheduleMinutes(minutes int) int {
 	if minutes <= 0 {
-		minutes = DefaultScheduleMinutes
+		return DefaultScheduleMinutes
 	}
 	if minutes < MinScheduleMinutes {
-		minutes = MinScheduleMinutes
+		return MinScheduleMinutes
 	}
 	if minutes > MaxScheduleMinutes {
-		minutes = MaxScheduleMinutes
+		return MaxScheduleMinutes
 	}
-	return time.Duration(minutes) * time.Minute
+	return minutes
 }
 
 // ScheduleDue reports whether the target needs a scheduled run at now. A
 // target that has never run is due immediately.
 func (t Target) ScheduleDue(now time.Time) bool {
+	if !t.Enabled || !t.ScheduleEnabled {
+		return false
+	}
+	if t.LastRunAt == nil || t.LastRunAt.IsZero() {
+		return true
+	}
+	return now.Sub(*t.LastRunAt) >= t.ScheduleInterval()
+}
+
+// ScheduleInterval returns the normalized interval between scheduled runs.
+func (t IPTarget) ScheduleInterval() time.Duration {
+	return normalizeScheduleMinutes(t.ScheduleIntervalMinutes)
+}
+
+// ScheduleDue reports whether the IP target needs a scheduled run at now.
+func (t IPTarget) ScheduleDue(now time.Time) bool {
 	if !t.Enabled || !t.ScheduleEnabled {
 		return false
 	}

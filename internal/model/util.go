@@ -47,9 +47,17 @@ func DefaultPort(protocol string) int {
 	}
 }
 
-// ScanCIDRs returns the normalized ICMP sweep subnets of a target.
-func (t Target) ScanCIDRs() []string {
-	return SplitList(t.ScanSubnets)
+// MaxScanHosts bounds one batch device scan.
+const MaxScanHosts = 256
+
+// ScanCIDRs returns the normalized ICMP sweep subnets of an IP target.
+func (t IPTarget) ScanCIDRs() []string {
+	return SplitList(t.Subnets)
+}
+
+// ScanCIDRs returns the normalized subnets of a batch scan.
+func (r ScanRequest) ScanCIDRs() []string {
+	return SplitList(r.Subnets)
 }
 
 // NormalizeSubnets collapses the supported separators into a comma separated
@@ -80,6 +88,17 @@ func SplitList(value string) []string {
 	return out
 }
 
+func normalizeSNMPConfig(c *SNMPConfig) {
+	c.Version = strings.ToLower(strings.TrimSpace(c.Version))
+	if c.Version == "" {
+		c.Version = "v2c"
+	}
+	c.Community = strings.TrimSpace(c.Community)
+	c.V3Username = strings.TrimSpace(c.V3Username)
+	c.V3AuthProtocol = strings.ToUpper(strings.TrimSpace(c.V3AuthProtocol))
+	c.V3PrivProtocol = strings.ToUpper(strings.TrimSpace(c.V3PrivProtocol))
+}
+
 // NormalizeTarget fills in defaults and strips accidental whitespace.
 func NormalizeTarget(t *Target) {
 	t.Name = strings.TrimSpace(t.Name)
@@ -90,31 +109,50 @@ func NormalizeTarget(t *Target) {
 	t.Platform = strings.TrimSpace(t.Platform)
 	t.DeviceName = strings.TrimSpace(t.DeviceName)
 	t.Description = strings.TrimSpace(t.Description)
-	t.ScanSubnets = NormalizeSubnets(t.ScanSubnets)
 	if t.Port == 0 {
 		t.Port = DefaultPort(t.Protocol)
 	}
-	if t.ScheduleIntervalMinutes <= 0 {
-		t.ScheduleIntervalMinutes = DefaultScheduleMinutes
-	}
-	if t.ScheduleIntervalMinutes < MinScheduleMinutes {
-		t.ScheduleIntervalMinutes = MinScheduleMinutes
-	}
-	if t.ScheduleIntervalMinutes > MaxScheduleMinutes {
-		t.ScheduleIntervalMinutes = MaxScheduleMinutes
-	}
+	t.ScheduleIntervalMinutes = clampScheduleMinutes(t.ScheduleIntervalMinutes)
 	if t.Name == "" {
 		t.Name = t.Address
 	}
-	t.SNMP.Version = strings.ToLower(strings.TrimSpace(t.SNMP.Version))
-	if t.SNMP.Version == "" {
-		t.SNMP.Version = "v2c"
-	}
-	t.SNMP.V3AuthProtocol = strings.ToUpper(strings.TrimSpace(t.SNMP.V3AuthProtocol))
-	t.SNMP.V3PrivProtocol = strings.ToUpper(strings.TrimSpace(t.SNMP.V3PrivProtocol))
+	normalizeSNMPConfig(&t.SNMP)
 	t.IPMI.Interface = strings.ToLower(strings.TrimSpace(t.IPMI.Interface))
 	if t.IPMI.Interface == "" {
 		t.IPMI.Interface = "lanplus"
+	}
+}
+
+// NormalizeIPTarget fills in defaults for an independent IP discovery target.
+func NormalizeIPTarget(t *IPTarget) {
+	t.Name = strings.TrimSpace(t.Name)
+	t.Subnets = NormalizeSubnets(t.Subnets)
+	t.Address = strings.TrimSpace(t.Address)
+	if t.Address != "" && t.Port == 0 {
+		t.Port = 161
+	}
+	t.ScheduleIntervalMinutes = clampScheduleMinutes(t.ScheduleIntervalMinutes)
+	normalizeSNMPConfig(&t.SNMP)
+	if t.Name == "" {
+		t.Name = First(t.Address, t.Subnets, "IP 采集")
+	}
+}
+
+// NormalizeScanRequest fills in defaults for a batch device scan.
+func NormalizeScanRequest(r *ScanRequest) {
+	r.Subnets = NormalizeSubnets(r.Subnets)
+	r.Protocol = strings.ToLower(strings.TrimSpace(r.Protocol))
+	r.Site = strings.TrimSpace(r.Site)
+	r.DeviceRole = strings.TrimSpace(r.DeviceRole)
+	r.Platform = strings.TrimSpace(r.Platform)
+	r.NamePrefix = strings.TrimSpace(r.NamePrefix)
+	if r.Port == 0 {
+		r.Port = DefaultPort(r.Protocol)
+	}
+	normalizeSNMPConfig(&r.SNMP)
+	r.IPMI.Interface = strings.ToLower(strings.TrimSpace(r.IPMI.Interface))
+	if r.IPMI.Interface == "" {
+		r.IPMI.Interface = "lanplus"
 	}
 }
 
@@ -131,7 +169,45 @@ func ValidateTarget(t Target) error {
 	if t.Port < 0 || t.Port > 65535 {
 		return fmt.Errorf("invalid port %d", t.Port)
 	}
-	for _, cidr := range t.ScanCIDRs() {
+	return nil
+}
+
+// ValidateIPTarget checks an independent IP discovery target.
+func ValidateIPTarget(t IPTarget) error {
+	if t.Address == "" && len(t.ScanCIDRs()) == 0 {
+		return fmt.Errorf("请至少填写一个扫描网段或 SNMP 来源地址")
+	}
+	if t.Port < 0 || t.Port > 65535 {
+		return fmt.Errorf("invalid port %d", t.Port)
+	}
+	return validateIPv4CIDRs(t.ScanCIDRs())
+}
+
+// ValidateScanRequest checks a batch device scan.
+func ValidateScanRequest(r ScanRequest) error {
+	switch r.Protocol {
+	case ProtocolSNMP, ProtocolIPMI, ProtocolRedfish:
+	default:
+		return fmt.Errorf("unsupported protocol %q", r.Protocol)
+	}
+	if r.Port < 0 || r.Port > 65535 {
+		return fmt.Errorf("invalid port %d", r.Port)
+	}
+	cidrs := r.ScanCIDRs()
+	if len(cidrs) == 0 {
+		return fmt.Errorf("请填写要扫描的 IPv4 网段")
+	}
+	if err := validateIPv4CIDRs(cidrs); err != nil {
+		return err
+	}
+	if count := ScanHostCount(cidrs); count > MaxScanHosts {
+		return fmt.Errorf("单次批量扫描最多 %d 个地址，请缩小网段（当前约 %d 个）", MaxScanHosts, count)
+	}
+	return nil
+}
+
+func validateIPv4CIDRs(cidrs []string) error {
+	for _, cidr := range cidrs {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
 			return fmt.Errorf("无效的扫描网段 %q: %w", cidr, err)
@@ -141,4 +217,29 @@ func ValidateTarget(t Target) error {
 		}
 	}
 	return nil
+}
+
+// ScanHostCount returns the approximate number of usable hosts in cidrs. It
+// stops counting once MaxScanHosts is exceeded.
+func ScanHostCount(cidrs []string) int {
+	var total int64
+	for _, cidr := range cidrs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		ones, bits := network.Mask.Size()
+		if bits != 32 {
+			continue
+		}
+		if ones >= 31 {
+			total += int64(1) << uint(32-ones)
+		} else {
+			total += (int64(1) << uint(32-ones)) - 2
+		}
+		if total > MaxScanHosts {
+			return MaxScanHosts + 1
+		}
+	}
+	return int(total)
 }

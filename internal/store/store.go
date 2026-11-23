@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	settingsFile = "settings.json"
-	targetsFile  = "targets.json"
+	settingsFile  = "settings.json"
+	targetsFile   = "targets.json"
+	ipTargetsFile = "ip_targets.json"
 )
 
 // Store is a small thread-safe JSON backed store. Credentials are stored in
@@ -28,6 +29,7 @@ type Store struct {
 	dir             string
 	settings        model.Settings
 	targets         []model.Target
+	ipTargets       []model.IPTarget
 	settingsExisted bool
 }
 
@@ -43,8 +45,17 @@ func Open(dir string) (*Store, error) {
 	if err := s.loadSettings(); err != nil {
 		return nil, err
 	}
-	if err := s.loadTargets(); err != nil {
+	if err := s.loadIPTargets(); err != nil {
 		return nil, err
+	}
+	legacy, err := s.loadTargets()
+	if err != nil {
+		return nil, err
+	}
+	if len(legacy) > 0 {
+		if err := s.migrateIPTargets(legacy); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }
@@ -96,27 +107,119 @@ func (s *Store) loadSettings() error {
 	return nil
 }
 
-func (s *Store) loadTargets() error {
+// legacyTarget carries the pre-v0.5 device-level IP discovery fields so they
+// can be migrated into standalone IP targets.
+type legacyTarget struct {
+	model.Target
+	DiscoverIPs bool   `json:"discover_ips"`
+	ScanSubnets string `json:"scan_subnets"`
+}
+
+func (s *Store) loadTargets() ([]model.IPTarget, error) {
 	data, err := os.ReadFile(filepath.Join(s.dir, targetsFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("read targets: %w", err)
+		return nil, fmt.Errorf("read targets: %w", err)
 	}
 	if len(data) == 0 {
-		return nil
+		return nil, nil
 	}
-	if err := json.Unmarshal(data, &s.targets); err != nil {
-		return fmt.Errorf("parse targets.json: %w", err)
+	var items []legacyTarget
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("parse targets.json: %w", err)
 	}
-	for i := range s.targets {
-		model.NormalizeTarget(&s.targets[i])
+	s.targets = make([]model.Target, 0, len(items))
+	var legacy []model.IPTarget
+	for _, item := range items {
+		model.NormalizeTarget(&item.Target)
+		s.targets = append(s.targets, item.Target)
+		if !item.DiscoverIPs || item.Target.Protocol != model.ProtocolSNMP {
+			continue
+		}
+		ipTarget := model.IPTarget{
+			ID:                      "ip-" + item.Target.ID,
+			Name:                    "IP 发现 · " + item.Target.Name,
+			Enabled:                 item.Target.Enabled,
+			Subnets:                 model.NormalizeSubnets(item.ScanSubnets),
+			Address:                 item.Target.Address,
+			Port:                    item.Target.Port,
+			SNMP:                    item.Target.SNMP,
+			ScheduleEnabled:         item.Target.ScheduleEnabled,
+			ScheduleIntervalMinutes: item.Target.ScheduleIntervalMinutes,
+			LastRunAt:               item.Target.LastRunAt,
+		}
+		model.NormalizeIPTarget(&ipTarget)
+		legacy = append(legacy, ipTarget)
 	}
 	sort.Slice(s.targets, func(i, j int) bool {
 		return s.targets[i].Name < s.targets[j].Name
 	})
+	return legacy, nil
+}
+
+func (s *Store) loadIPTargets() error {
+	data, err := os.ReadFile(filepath.Join(s.dir, ipTargetsFile))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read ip targets: %w", err)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(data, &s.ipTargets); err != nil {
+		return fmt.Errorf("parse ip_targets.json: %w", err)
+	}
+	for i := range s.ipTargets {
+		model.NormalizeIPTarget(&s.ipTargets[i])
+	}
+	s.sortIPTargetsLocked()
 	return nil
+}
+
+// migrateIPTargets imports device-level IP discovery settings written by
+// older releases and rewrites targets.json without the retired fields.
+func (s *Store) migrateIPTargets(candidates []model.IPTarget) error {
+	existing := make(map[string]bool, len(s.ipTargets))
+	for _, target := range s.ipTargets {
+		existing[target.ID] = true
+	}
+	now := time.Now().UTC()
+	changed := false
+	for _, target := range candidates {
+		if existing[target.ID] {
+			continue
+		}
+		if target.CreatedAt.IsZero() {
+			target.CreatedAt = now
+		}
+		if target.UpdatedAt.IsZero() {
+			target.UpdatedAt = now
+		}
+		s.ipTargets = append(s.ipTargets, target)
+		existing[target.ID] = true
+		changed = true
+	}
+	if !changed {
+		// The migrated target may already exist while targets.json still
+		// carries the retired fields (for example after an interrupted
+		// migration). Rewrite it anyway so the fields are removed.
+		return writeJSON(filepath.Join(s.dir, targetsFile), s.targets)
+	}
+	s.sortIPTargetsLocked()
+	if err := writeJSON(filepath.Join(s.dir, ipTargetsFile), s.ipTargets); err != nil {
+		return err
+	}
+	return writeJSON(filepath.Join(s.dir, targetsFile), s.targets)
+}
+
+func (s *Store) sortIPTargetsLocked() {
+	sort.Slice(s.ipTargets, func(i, j int) bool {
+		return s.ipTargets[i].Name < s.ipTargets[j].Name
+	})
 }
 
 // Settings returns a copy of the current settings.
@@ -272,6 +375,93 @@ func (s *Store) DeleteTarget(id string) (bool, error) {
 	}
 	s.targets = out
 	return true, writeJSON(filepath.Join(s.dir, targetsFile), s.targets)
+}
+
+// IPTargets returns a sorted copy of all IP discovery targets.
+func (s *Store) IPTargets() []model.IPTarget {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.IPTarget, len(s.ipTargets))
+	copy(out, s.ipTargets)
+	return out
+}
+
+// IPTarget returns one IP discovery target by ID.
+func (s *Store) IPTarget(id string) (model.IPTarget, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.ipTargets {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return model.IPTarget{}, false
+}
+
+// SaveIPTarget creates or replaces an IP discovery target.
+func (s *Store) SaveIPTarget(t model.IPTarget) (model.IPTarget, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	if t.ID == "" {
+		t.ID = newID()
+		t.CreatedAt = now
+	}
+	t.UpdatedAt = now
+	found := false
+	for i := range s.ipTargets {
+		if s.ipTargets[i].ID == t.ID {
+			if t.CreatedAt.IsZero() {
+				t.CreatedAt = s.ipTargets[i].CreatedAt
+			}
+			s.ipTargets[i] = t
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.ipTargets = append(s.ipTargets, t)
+	}
+	s.sortIPTargetsLocked()
+	if err := writeJSON(filepath.Join(s.dir, ipTargetsFile), s.ipTargets); err != nil {
+		return model.IPTarget{}, err
+	}
+	return t, nil
+}
+
+// MarkIPTargetRun records when a scheduled IP run started.
+func (s *Store) MarkIPTargetRun(id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at = at.UTC()
+	for i := range s.ipTargets {
+		if s.ipTargets[i].ID != id {
+			continue
+		}
+		s.ipTargets[i].LastRunAt = &at
+		return writeJSON(filepath.Join(s.dir, ipTargetsFile), s.ipTargets)
+	}
+	return nil
+}
+
+// DeleteIPTarget removes an IP discovery target by ID.
+func (s *Store) DeleteIPTarget(id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.ipTargets[:0]
+	found := false
+	for _, t := range s.ipTargets {
+		if t.ID == id {
+			found = true
+			continue
+		}
+		out = append(out, t)
+	}
+	if !found {
+		return false, nil
+	}
+	s.ipTargets = out
+	return true, writeJSON(filepath.Join(s.dir, ipTargetsFile), s.ipTargets)
 }
 
 func writeJSON(path string, v any) error {

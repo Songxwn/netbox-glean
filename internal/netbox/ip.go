@@ -27,6 +27,39 @@ type nbIPAddress struct {
 	AssignedObjectID   int    `json:"assigned_object_id"`
 }
 
+// SyncIPs writes IP addresses discovered by a standalone IP discovery run
+// into NetBox IPAM. It does not require a device.
+func (c *Client) SyncIPs(ctx context.Context, settings model.Settings, source string, ips []model.IPAddress, logf model.LogFunc) (*model.SyncResult, error) {
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+	res := &model.SyncResult{}
+	created, assigned, skipped, warnings := c.syncIPAddresses(ctx, source, ips, settings.SyncUnmatchedIPs, logf)
+	res.IPCreated = created
+	res.IPAssigned = assigned
+	res.IPSkipped = skipped
+	res.Warnings = append(res.Warnings, warnings...)
+	if created+assigned+skipped > 0 {
+		res.Add("IP 地址: 新建 %d, 分配 %d, 跳过 %d", created, assigned, skipped)
+	}
+	return res, nil
+}
+
+// SyncIPs is the package-level entry point used by the server for IP-only
+// jobs. It respects the global sync_ip_addresses switch.
+func SyncIPs(ctx context.Context, settings model.Settings, source string, ips []model.IPAddress, logf model.LogFunc) (*model.SyncResult, error) {
+	if !settings.SyncIPAddresses {
+		res := &model.SyncResult{}
+		res.Warn("IP 地址同步已在设置中禁用")
+		return res, nil
+	}
+	client, err := NewFromSettings(settings)
+	if err != nil {
+		return nil, err
+	}
+	return client.SyncIPs(ctx, settings, source, ips, logf)
+}
+
 // syncIPAddresses writes IPs discovered through ARP/NDP tables and ICMP
 // sweeps into NetBox IPAM. When the discovered MAC matches a NetBox
 // interface the address is assigned to it; unmatched addresses are skipped

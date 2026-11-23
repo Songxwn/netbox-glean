@@ -24,6 +24,7 @@ const (
 const (
 	TriggerManual   = "manual"
 	TriggerSchedule = "schedule"
+	TriggerScan     = "scan"
 )
 
 // Job is one collection or sync run.
@@ -38,10 +39,11 @@ type Job struct {
 	CreatedAt  time.Time        `json:"created_at"`
 	StartedAt  *time.Time       `json:"started_at,omitempty"`
 	FinishedAt *time.Time       `json:"finished_at,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	Log        []string         `json:"log,omitempty"`
-	Result     *model.Collected `json:"result,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Log        []string          `json:"log,omitempty"`
+	Result     *model.Collected  `json:"result,omitempty"`
 	Sync       *model.SyncResult `json:"sync,omitempty"`
+	Scan       *model.ScanResult `json:"scan,omitempty"`
 }
 
 // JobSummary is the lightweight form used by list endpoints.
@@ -59,11 +61,23 @@ type JobSummary struct {
 	Error      string     `json:"error,omitempty"`
 	Interfaces int        `json:"interfaces"`
 	Components int        `json:"components"`
+	Found      int        `json:"found"`
+	Added      int        `json:"added"`
+}
+
+// Meta identifies the subject of a job that is not a device target.
+type Meta struct {
+	ID       string
+	Name     string
+	Protocol string
 }
 
 // RunFunc performs the actual work. It receives a context bounded by the
 // manager timeout and a logging callback.
 type RunFunc func(ctx context.Context, logf model.LogFunc) (*model.Collected, *model.SyncResult, error)
+
+// ScanRunFunc performs a batch device scan.
+type ScanRunFunc func(ctx context.Context, logf model.LogFunc) (*model.ScanResult, error)
 
 // Options configures the manager.
 type Options struct {
@@ -101,34 +115,64 @@ func New(opts Options) *Manager {
 	}
 }
 
-// Start queues a job and returns its ID. The trigger is "manual" or
-// "schedule" and is recorded for display purposes.
+// Start queues a device job and returns its ID.
 func (m *Manager) Start(target model.Target, mode, trigger string, run RunFunc) string {
+	return m.StartMeta(Meta{ID: target.ID, Name: target.Name, Protocol: target.Protocol}, mode, trigger, run)
+}
+
+// StartMeta queues a job for any subject (device, IP target or scan).
+func (m *Manager) StartMeta(meta Meta, mode, trigger string, run RunFunc) string {
 	if trigger == "" {
 		trigger = TriggerManual
 	}
-	id := newID()
+	job := m.newJob(meta, mode, trigger)
+	go m.execute(job, func(ctx context.Context, logf model.LogFunc) jobOutcome {
+		collected, sync, err := run(ctx, logf)
+		return jobOutcome{collected: collected, sync: sync, err: err}
+	})
+	return job.ID
+}
+
+// StartScan queues a batch device scan job.
+func (m *Manager) StartScan(meta Meta, trigger string, run ScanRunFunc) string {
+	if trigger == "" {
+		trigger = TriggerScan
+	}
+	job := m.newJob(meta, model.ModeScan, trigger)
+	go m.execute(job, func(ctx context.Context, logf model.LogFunc) jobOutcome {
+		scan, err := run(ctx, logf)
+		return jobOutcome{scan: scan, err: err}
+	})
+	return job.ID
+}
+
+func (m *Manager) newJob(meta Meta, mode, trigger string) *Job {
 	job := &Job{
-		ID:         id,
-		TargetID:   target.ID,
-		TargetName: target.Name,
-		Protocol:   target.Protocol,
+		ID:         newID(),
+		TargetID:   meta.ID,
+		TargetName: meta.Name,
+		Protocol:   meta.Protocol,
 		Mode:       mode,
 		Trigger:    trigger,
 		Status:     StatusQueued,
 		CreatedAt:  time.Now().UTC(),
 	}
 	m.mu.Lock()
-	m.jobs[id] = job
-	m.order = append(m.order, id)
+	m.jobs[job.ID] = job
+	m.order = append(m.order, job.ID)
 	m.pruneLocked()
 	m.mu.Unlock()
-
-	go m.execute(job, run)
-	return id
+	return job
 }
 
-func (m *Manager) execute(job *Job, run RunFunc) {
+type jobOutcome struct {
+	collected *model.Collected
+	sync      *model.SyncResult
+	scan      *model.ScanResult
+	err       error
+}
+
+func (m *Manager) execute(job *Job, run func(context.Context, model.LogFunc) jobOutcome) {
 	m.sem <- struct{}{}
 	defer func() { <-m.sem }()
 
@@ -142,18 +186,14 @@ func (m *Manager) execute(job *Job, run RunFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 	defer cancel()
 
-	var (
-		result  *model.Collected
-		syncRes *model.SyncResult
-		err     error
-	)
+	var out jobOutcome
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("panic: %v", r)
+				out.err = fmt.Errorf("panic: %v", r)
 			}
 		}()
-		result, syncRes, err = run(ctx, func(format string, args ...any) {
+		out = run(ctx, func(format string, args ...any) {
 			m.logf(job, format, args...)
 		})
 	}()
@@ -162,9 +202,11 @@ func (m *Manager) execute(job *Job, run RunFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	job.FinishedAt = &finished
-	job.Result = result
-	job.Sync = syncRes
-	if err != nil {
+	job.Result = out.collected
+	job.Sync = out.sync
+	job.Scan = out.scan
+	if out.err != nil {
+		err := out.err
 		if ctx.Err() == context.DeadlineExceeded {
 			err = fmt.Errorf("任务超时（%s）: %w", m.timeout, err)
 		}
@@ -235,6 +277,10 @@ func (m *Manager) List(limit int) []JobSummary {
 		if job.Result != nil {
 			summary.Interfaces = len(job.Result.Interfaces)
 			summary.Components = len(job.Result.Components)
+		}
+		if job.Scan != nil {
+			summary.Found = job.Scan.Alive
+			summary.Added = job.Scan.Added
 		}
 		out = append(out, summary)
 	}

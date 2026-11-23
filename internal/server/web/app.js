@@ -1,12 +1,15 @@
 const state = {
   page: 'dashboard',
   targets: [],
+  ipTargets: [],
   jobs: [],
   settings: null,
   stats: null,
   version: null,
   editingId: null,
+  editingIpId: null,
   search: '',
+  ipSearch: '',
   openJobId: null,
   pollTimer: null,
 };
@@ -21,10 +24,11 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
   "'": '&#39;',
 }[ch]));
 
-const protocolLabels = { snmp: 'SNMP', ipmi: 'IPMI', redfish: 'Redfish' };
-const modeLabels = { collect: '采集预览', sync: '采集并同步' };
-const triggerLabels = { manual: '手动', schedule: '定时' };
+const protocolLabels = { snmp: 'SNMP', ipmi: 'IPMI', redfish: 'Redfish', ipscan: 'IP 采集', scan: '设备扫描' };
+const modeLabels = { collect: '采集预览', sync: '采集并同步', scan: '批量扫描' };
+const triggerLabels = { manual: '手动', schedule: '定时', scan: '扫描' };
 const statusLabels = { queued: '排队', running: '运行中', success: '成功', error: '失败' };
+const scanStatusLabels = { added: '新增', existing: '已存在', skipped: '跳过', failed: '失败' };
 
 async function api(path, options = {}) {
   const headers = Object.assign({}, options.headers || {});
@@ -111,13 +115,17 @@ function scheduleCell(target) {
   return `<span class="badge badge-success">每 ${minutesLabel(target.schedule_interval_minutes)}</span>${last}`;
 }
 
-function discoveryCell(target) {
-  if (!target.discover_ips) return '<span class="muted">关闭</span>';
-  const subnets = String(target.scan_subnets || '').split(/[,\s;]+/).filter(Boolean).length;
-  const scan = subnets
-    ? `<div class="muted">扫描 ${subnets} 个网段</div>`
-    : '<div class="muted">仅 ARP/NDP</div>';
-  return `<span class="badge badge-success">开启</span>${scan}`;
+function ipTargetTypeCell(target) {
+  const parts = [];
+  if (target.address) parts.push(`<span class="badge badge-protocol">SNMP</span>`);
+  if (String(target.subnets || '').trim()) parts.push(`<span class="badge badge-success">ICMP</span>`);
+  return parts.join(' ') || '<span class="muted">—</span>';
+}
+
+function ipTargetSubnetsCell(target) {
+  const subnets = String(target.subnets || '').split(/[,\s;]+/).filter(Boolean);
+  if (subnets.length === 0) return '<span class="muted">仅 ARP/NDP</span>';
+  return `<span class="mono">${esc(subnets.join(', '))}</span>`;
 }
 
 function statusBadge(status) {
@@ -138,8 +146,9 @@ function setPage(page) {
   if (section) section.classList.remove('hidden');
   const titles = {
     dashboard: ['概览', '通过 SNMP / IPMI / Redfish 采集设备硬件信息并写入 NetBox'],
-    targets: ['采集目标', '管理设备地址、凭据与 NetBox 归属'],
-    jobs: ['任务记录', '查看采集日志、硬件摘要与 NetBox 同步结果'],
+    targets: ['采集目标', '管理设备地址、凭据、NetBox 归属与批量扫描'],
+    iptargets: ['IP 采集', '独立读取 ARP/NDP 表或扫描网段，把 IP 写入 NetBox IPAM'],
+    jobs: ['任务记录', '查看采集日志、硬件摘要、扫描结果与 NetBox 同步结果'],
     settings: ['设置', '配置 NetBox 连接、默认归属和同步行为'],
   };
   const [title, subtitle] = titles[page] || ['netbox-glean', ''];
@@ -147,21 +156,24 @@ function setPage(page) {
   $('page-subtitle').textContent = subtitle;
   if (page === 'jobs') renderJobs();
   if (page === 'targets') renderTargets();
+  if (page === 'iptargets') renderIPTargets();
   if (page === 'dashboard') renderDashboard();
 }
 
 async function boot() {
   try {
-    const [version, settings, targets, jobs, stats] = await Promise.all([
+    const [version, settings, targets, ipTargets, jobs, stats] = await Promise.all([
       api('/api/version'),
       api('/api/settings'),
       api('/api/targets'),
+      api('/api/ip-targets'),
       api('/api/jobs?limit=200'),
       api('/api/stats'),
     ]);
     state.version = version;
     state.settings = settings;
     state.targets = targets;
+    state.ipTargets = ipTargets;
     state.jobs = jobs;
     state.stats = stats;
     fillSettings(settings);
@@ -180,13 +192,17 @@ function startPolling() {
       state.pollCount = (state.pollCount || 0) + 1;
       const wantTargets = state.pollCount % 5 === 0;
       const requests = [api('/api/jobs?limit=200'), api('/api/stats')];
-      if (wantTargets) requests.push(api('/api/targets'));
-      const [jobs, stats, targets] = await Promise.all(requests);
+      if (wantTargets) requests.push(api('/api/targets'), api('/api/ip-targets'));
+      const [jobs, stats, targets, ipTargets] = await Promise.all(requests);
       state.jobs = jobs;
       state.stats = stats;
       if (targets) {
         state.targets = targets;
         renderTargets();
+      }
+      if (ipTargets) {
+        state.ipTargets = ipTargets;
+        renderIPTargets();
       }
       renderDashboard();
       renderJobs();
@@ -202,6 +218,7 @@ function renderAll() {
   $('version-label').textContent = version === 'dev' || version.startsWith('dev-') ? version : `v${version}`;
   renderDashboard();
   renderTargets();
+  renderIPTargets();
   renderJobs();
 }
 
@@ -209,7 +226,7 @@ function renderDashboard() {
   const stats = state.stats || {};
   const jobs = stats.jobs || {};
   $('stat-targets').textContent = stats.targets ?? state.targets.length;
-  $('stat-targets-hint').textContent = `启用 ${stats.targets_enabled ?? state.targets.filter((t) => t.enabled).length} 个`;
+  $('stat-targets-hint').textContent = `启用 ${stats.targets_enabled ?? state.targets.filter((t) => t.enabled).length} 个 · IP 采集 ${stats.ip_targets ?? state.ipTargets.length} 个`;
   $('stat-running').textContent = jobs.running ?? 0;
   $('stat-queued').textContent = `排队 ${jobs.queued ?? 0} 个`;
   $('stat-success').textContent = jobs.success ?? 0;
@@ -268,7 +285,6 @@ function renderTargets() {
       <td>${target.site ? `<span class="mono">${esc(target.site)}</span>` : '<span class="muted">默认</span>'}</td>
       <td>${target.device_name ? esc(target.device_name) : '<span class="muted">自动</span>'}</td>
       <td>${scheduleCell(target)}</td>
-      <td>${discoveryCell(target)}</td>
       <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
       <td>
         <div class="actions">
@@ -282,22 +298,59 @@ function renderTargets() {
   `).join('');
 }
 
+function renderIPTargets() {
+  const search = state.ipSearch.toLowerCase();
+  const targets = state.ipTargets.filter((t) => {
+    if (!search) return true;
+    return `${t.name} ${t.subnets || ''} ${t.address || ''}`.toLowerCase().includes(search);
+  });
+  const empty = $('ip-targets-empty');
+  empty.classList.toggle('hidden', targets.length > 0);
+  empty.textContent = state.ipTargets.length === 0
+    ? '还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4 网段，并把结果写入 NetBox IPAM。'
+    : '没有匹配的目标。';
+
+  $('ip-targets-body').innerHTML = targets.map((target) => `
+    <tr>
+      <td>
+        <strong>${esc(target.name)}</strong>
+        <div class="muted mono">${target.address ? `${esc(target.address)}:${esc(target.port || 161)}` : ''}</div>
+      </td>
+      <td>${ipTargetTypeCell(target)}</td>
+      <td>${ipTargetSubnetsCell(target)}</td>
+      <td>${scheduleCell(target)}</td>
+      <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
+      <td>
+        <div class="actions">
+          <button class="btn small" data-ip-action="collect" data-id="${esc(target.id)}">采集</button>
+          <button class="btn small primary" data-ip-action="sync" data-id="${esc(target.id)}">同步</button>
+          <button class="btn small" data-ip-action="edit" data-id="${esc(target.id)}">编辑</button>
+          <button class="btn small danger" data-ip-action="delete" data-id="${esc(target.id)}">删除</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
 function renderJobs() {
   $('jobs-summary').textContent = `共 ${state.jobs.length} 条任务记录，保留在内存中，重启后清空。`;
   $('jobs-empty').classList.toggle('hidden', state.jobs.length > 0);
-  $('jobs-body').innerHTML = state.jobs.map((job) => `
+  $('jobs-body').innerHTML = state.jobs.map((job) => {
+    const isScan = job.mode === 'scan';
+    return `
     <tr>
       <td><strong>${esc(job.target_name)}</strong><div class="muted mono">${esc(job.id)}</div></td>
       <td>${protocolBadge(job.protocol)}</td>
       <td>${esc(modeLabels[job.mode] || job.mode)}${job.trigger === 'schedule' ? ' · 定时' : ''}</td>
       <td>${statusBadge(job.status)}${job.error ? `<div class="muted">${esc(job.error.slice(0, 80))}</div>` : ''}</td>
-      <td>${job.interfaces}</td>
-      <td>${job.components}</td>
+      <td>${isScan ? `存活 ${job.found || 0}` : job.interfaces}</td>
+      <td>${isScan ? `新增 ${job.added || 0}` : job.components}</td>
       <td class="muted">${esc(fmtTime(job.started_at || job.created_at))}</td>
       <td class="muted">${esc(fmtDuration(job))}</td>
       <td class="right"><button class="btn small" data-job="${esc(job.id)}">查看</button></td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function fillSettings(settings) {
@@ -356,6 +409,183 @@ async function refreshJobs() {
   renderJobs();
 }
 
+async function reloadIPTargets() {
+  state.ipTargets = await api('/api/ip-targets');
+  renderIPTargets();
+  await reloadStats();
+}
+
+async function collectIPTarget(target, sync) {
+  const verb = sync ? '采集并同步' : '采集';
+  if (sync && !confirm(`确定要采集 ${target.name} 并同步到 NetBox IPAM 吗？`)) return;
+  try {
+    await api(`/api/ip-targets/${target.id}/collect`, { method: 'POST', body: { sync } });
+    toast(`已提交${verb}任务: ${target.name}`, 'success');
+    await refreshJobs();
+    setPage('jobs');
+  } catch (err) {
+    toast(`${verb}失败: ${err.message}`, 'error');
+  }
+}
+
+async function collectAllIPs(sync) {
+  if (sync && !confirm('确定要采集所有启用的 IP 采集目标并同步到 NetBox 吗？')) return;
+  try {
+    const result = await api('/api/ip-collect', { method: 'POST', body: { sync } });
+    toast(`已提交 ${result.count} 个 IP 采集任务`, 'success');
+    await refreshJobs();
+    setPage('jobs');
+  } catch (err) {
+    toast(`提交失败: ${err.message}`, 'error');
+  }
+}
+
+function openIPTargetModal(target) {
+  state.editingIpId = target ? target.id : null;
+  $('ip-target-modal-title').textContent = target ? `编辑 IP 采集 · ${target.name}` : '新增 IP 采集';
+  const snmp = (target && target.snmp) || { version: 'v2c', v3_auth_protocol: 'SHA256', v3_priv_protocol: 'AES' };
+  setVal('it-name', target ? target.name : '');
+  setChecked('it-enabled', target ? target.enabled : true);
+  setVal('it-subnets', target ? target.subnets : '');
+  setVal('it-source-address', target ? target.address : '');
+  setVal('it-source-port', target && target.port ? target.port : 161);
+  setChecked('it-schedule-enabled', target ? Boolean(target.schedule_enabled) : false);
+  setVal('it-schedule-interval', target && target.schedule_interval_minutes ? target.schedule_interval_minutes : 60);
+
+  setVal('is-version', snmp.version || 'v2c');
+  setVal('is-community', '');
+  setVal('is-v3-user', snmp.v3_username || '');
+  setVal('is-v3-auth-proto', snmp.v3_auth_protocol || 'SHA256');
+  setVal('is-v3-auth-pass', '');
+  setVal('is-v3-priv-proto', snmp.v3_priv_protocol || 'AES');
+  setVal('is-v3-priv-pass', '');
+
+  $('modal-iptarget').classList.remove('hidden');
+  $('it-name').focus();
+}
+
+function closeIPTargetModal() {
+  $('modal-iptarget').classList.add('hidden');
+  state.editingIpId = null;
+}
+
+async function saveIPTarget(event) {
+  event.preventDefault();
+  const target = {
+    name: val('it-name'),
+    enabled: checked('it-enabled'),
+    subnets: val('it-subnets'),
+    address: val('it-source-address'),
+    port: Number.parseInt(val('it-source-port'), 10) || 0,
+    schedule_enabled: checked('it-schedule-enabled'),
+    schedule_interval_minutes: Number.parseInt(val('it-schedule-interval'), 10) || 60,
+    snmp: {
+      version: val('is-version'),
+      community: val('is-community'),
+      v3_username: val('is-v3-user'),
+      v3_auth_protocol: val('is-v3-auth-proto'),
+      v3_auth_password: val('is-v3-auth-pass'),
+      v3_priv_protocol: val('is-v3-priv-proto'),
+      v3_priv_password: val('is-v3-priv-pass'),
+    },
+  };
+  try {
+    if (state.editingIpId) {
+      await api(`/api/ip-targets/${state.editingIpId}`, { method: 'PUT', body: target });
+      toast('IP 采集目标已更新', 'success');
+    } else {
+      await api('/api/ip-targets', { method: 'POST', body: target });
+      toast('IP 采集目标已创建', 'success');
+    }
+    closeIPTargetModal();
+    await reloadIPTargets();
+  } catch (err) {
+    toast(`保存失败: ${err.message}`, 'error');
+  }
+}
+
+function toggleScanProtocolFields(protocol) {
+  document.querySelectorAll('.scan-proto').forEach((node) => node.classList.add('hidden'));
+  document.querySelectorAll(`.scan-proto-${protocol}`).forEach((node) => node.classList.remove('hidden'));
+}
+
+function openScanModal() {
+  setVal('sc-subnets', '');
+  setVal('sc-protocol', 'snmp');
+  setVal('sc-port', 161);
+  setVal('sc-site', '');
+  setVal('sc-role', '');
+  setVal('sc-platform', '');
+  setVal('sc-name-prefix', '');
+  setChecked('sc-enabled', true);
+  setChecked('sc-sync', false);
+  setVal('sc-s-version', 'v2c');
+  setVal('sc-s-community', '');
+  setVal('sc-s-v3-user', '');
+  setVal('sc-s-v3-auth-proto', 'SHA256');
+  setVal('sc-s-v3-auth-pass', '');
+  setVal('sc-s-v3-priv-proto', 'AES');
+  setVal('sc-s-v3-priv-pass', '');
+  setVal('sc-i-user', '');
+  setVal('sc-i-pass', '');
+  setVal('sc-i-interface', 'lanplus');
+  setVal('sc-r-user', '');
+  setVal('sc-r-pass', '');
+  setVal('sc-r-system', '');
+  setChecked('sc-r-insecure', false);
+  toggleScanProtocolFields('snmp');
+  $('modal-scan').classList.remove('hidden');
+  $('sc-subnets').focus();
+}
+
+function closeScanModal() {
+  $('modal-scan').classList.add('hidden');
+}
+
+async function saveScan(event) {
+  event.preventDefault();
+  const request = {
+    subnets: val('sc-subnets'),
+    protocol: val('sc-protocol'),
+    port: Number.parseInt(val('sc-port'), 10) || 0,
+    site: val('sc-site'),
+    device_role: val('sc-role'),
+    platform: val('sc-platform'),
+    name_prefix: val('sc-name-prefix'),
+    enabled: checked('sc-enabled'),
+    sync: checked('sc-sync'),
+    snmp: {
+      version: val('sc-s-version'),
+      community: val('sc-s-community'),
+      v3_username: val('sc-s-v3-user'),
+      v3_auth_protocol: val('sc-s-v3-auth-proto'),
+      v3_auth_password: val('sc-s-v3-auth-pass'),
+      v3_priv_protocol: val('sc-s-v3-priv-proto'),
+      v3_priv_password: val('sc-s-v3-priv-pass'),
+    },
+    ipmi: {
+      username: val('sc-i-user'),
+      password: val('sc-i-pass'),
+      interface: val('sc-i-interface'),
+    },
+    redfish: {
+      username: val('sc-r-user'),
+      password: val('sc-r-pass'),
+      insecure: checked('sc-r-insecure'),
+      system_id: val('sc-r-system'),
+    },
+  };
+  try {
+    await api('/api/scan', { method: 'POST', body: request });
+    toast('扫描任务已提交', 'success');
+    closeScanModal();
+    await refreshJobs();
+    setPage('jobs');
+  } catch (err) {
+    toast(`提交扫描失败: ${err.message}`, 'error');
+  }
+}
+
 function openTargetModal(target) {
   state.editingId = target ? target.id : null;
   $('target-modal-title').textContent = target ? `编辑目标 · ${target.name}` : '新增目标';
@@ -374,8 +604,6 @@ function openTargetModal(target) {
   setChecked('t-enabled', target ? target.enabled : true);
   setChecked('t-schedule-enabled', target ? Boolean(target.schedule_enabled) : false);
   setVal('t-schedule-interval', target && target.schedule_interval_minutes ? target.schedule_interval_minutes : 60);
-  setChecked('t-discover-ips', target ? Boolean(target.discover_ips) : false);
-  setVal('t-scan-subnets', target ? target.scan_subnets : '');
 
   setVal('s-version', snmp.version || 'v2c');
   setVal('s-community', '');
@@ -428,8 +656,6 @@ async function saveTarget(event) {
     description: val('t-description'),
     schedule_enabled: checked('t-schedule-enabled'),
     schedule_interval_minutes: Number.parseInt(val('t-schedule-interval'), 10) || 60,
-    discover_ips: checked('t-discover-ips'),
-    scan_subnets: val('t-scan-subnets'),
     snmp: {
       version: val('s-version'),
       community: val('s-community'),
@@ -549,7 +775,9 @@ function renderJobDetail(job) {
 
   const result = job.result || null;
   const sync = job.sync || null;
+  const scan = job.scan || null;
   const identity = result ? (result.identity || {}) : {};
+  const isDeviceResult = Boolean(result) && job.protocol !== 'ipscan' && job.mode !== 'scan';
 
   const kv = `
     <dl class="kv">
@@ -562,7 +790,7 @@ function renderJobDetail(job) {
       ${job.error ? `<dt>错误</dt><dd class="badge-error">${esc(job.error)}</dd>` : ''}
     </dl>`;
 
-  const identityBlock = result ? `
+  const identityBlock = isDeviceResult ? `
     <h3 class="section-title">设备信息</h3>
     <dl class="kv">
       <dt>名称</dt><dd>${esc(identity.name || '—')}</dd>
@@ -573,7 +801,7 @@ function renderJobDetail(job) {
       <dt>内存</dt><dd>${identity.memory_gb ? `${identity.memory_gb} GB` : '—'}</dd>
       <dt>BIOS / BMC</dt><dd>${esc(identity.bios_version || '—')} / ${esc(identity.bmc_version || '—')}</dd>
       <dt>接口 / 组件</dt><dd>${(result.interfaces || []).length} / ${(result.components || []).length}</dd>
-    </dl>` : '<p class="muted">尚无采集结果。</p>';
+    </dl>` : (job.mode === 'scan' || job.protocol === 'ipscan' ? '' : '<p class="muted">尚无采集结果。</p>');
 
   const neighborList = result && Array.isArray(result.neighbors) ? result.neighbors : [];
   const neighborBlock = neighborList.length ? `
@@ -613,17 +841,42 @@ function renderJobDetail(job) {
     ? `<h3 class="section-title">警告</h3><ul class="list warn-list">${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`
     : '';
 
+  const deviceSync = Boolean(sync && (sync.device_id || sync.device_name));
   const syncBlock = sync ? `
     <h3 class="section-title">NetBox 同步结果</h3>
     <dl class="kv">
-      <dt>设备</dt><dd>${esc(sync.device_name || '—')} (#${sync.device_id}) ${sync.device_url ? `· <a href="${esc(sync.device_url)}" target="_blank" rel="noreferrer">打开</a>` : ''}</dd>
-      <dt>接口</dt><dd>新建 ${sync.interfaces_created} / 更新 ${sync.interfaces_updated}</dd>
-      <dt>LLDP 连线</dt><dd>新建 ${sync.cables_created || 0} / 跳过 ${sync.cables_skipped || 0}</dd>
-      <dt>发现的 IP</dt><dd>新建 ${sync.ip_created || 0} / 分配 ${sync.ip_assigned || 0} / 跳过 ${sync.ip_skipped || 0}</dd>
-      <dt>硬件清单</dt><dd>新建 ${sync.inventory_created} / 更新 ${sync.inventory_updated}</dd>
+      ${deviceSync ? `<dt>设备</dt><dd>${esc(sync.device_name || '—')} (#${sync.device_id}) ${sync.device_url ? `· <a href="${esc(sync.device_url)}" target="_blank" rel="noreferrer">打开</a>` : ''}</dd>` : ''}
+      ${deviceSync ? `<dt>接口</dt><dd>新建 ${sync.interfaces_created} / 更新 ${sync.interfaces_updated}</dd>` : ''}
+      ${deviceSync ? `<dt>LLDP 连线</dt><dd>新建 ${sync.cables_created || 0} / 跳过 ${sync.cables_skipped || 0}</dd>` : ''}
+      <dt>IP 地址</dt><dd>新建 ${sync.ip_created || 0} / 分配 ${sync.ip_assigned || 0} / 跳过 ${sync.ip_skipped || 0}</dd>
+      ${deviceSync ? `<dt>硬件清单</dt><dd>新建 ${sync.inventory_created} / 更新 ${sync.inventory_updated}</dd>` : ''}
       ${sync.ip_address ? `<dt>主 IP</dt><dd class="mono">${esc(sync.ip_address)}</dd>` : ''}
     </dl>
     ${Array.isArray(sync.actions) && sync.actions.length ? `<ul class="list">${sync.actions.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+  ` : '';
+
+  const scanStatsBlock = scan ? `
+    <h3 class="section-title">扫描结果</h3>
+    <dl class="kv">
+      <dt>网段 / 协议</dt><dd class="mono">${esc(scan.subnets || '—')} · ${esc(protocolLabels[scan.protocol] || scan.protocol || '—')}</dd>
+      <dt>扫描 / 存活</dt><dd>${scan.scanned} / ${scan.alive}</dd>
+      <dt>新增 / 已存在</dt><dd>${scan.added} / ${scan.existing}</dd>
+      <dt>跳过 / 失败</dt><dd>${scan.skipped} / ${scan.failed}</dd>
+    </dl>
+    ${Array.isArray(scan.warnings) && scan.warnings.length ? `<ul class="list warn-list">${scan.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    ${Array.isArray(scan.devices) && scan.devices.length ? `
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>地址</th><th>名称</th><th>厂商 / 型号</th><th>状态</th><th>备注</th></tr></thead>
+        <tbody>${scan.devices.map((d) => `<tr>
+          <td class="mono">${esc(d.address || '—')}</td>
+          <td>${esc(d.name || '—')}</td>
+          <td>${esc(d.manufacturer || '—')} / ${esc(d.model || '—')}</td>
+          <td><span class="badge badge-${esc(d.status === 'added' ? 'success' : d.status === 'failed' ? 'error' : 'queued')}">${esc(scanStatusLabels[d.status] || d.status)}</span></td>
+          <td class="muted">${esc(d.error || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>` : ''}
   ` : '';
 
   const log = Array.isArray(job.log) && job.log.length
@@ -634,6 +887,7 @@ function renderJobDetail(job) {
     <div class="job-status-head">${statusBadge(job.status)}${job.error ? '<span class="badge badge-error">查看错误</span>' : ''}</div>
     ${kv}
     ${syncBlock}
+    ${scanStatsBlock}
     ${identityBlock}
     ${neighborBlock}
     ${ipBlock}
@@ -658,6 +912,11 @@ function bindEvents() {
   $('btn-collect-all').addEventListener('click', () => collectAll(false));
   $('btn-sync-all').addEventListener('click', () => collectAll(true));
   $('btn-add-target').addEventListener('click', () => openTargetModal(null));
+  $('btn-scan').addEventListener('click', openScanModal);
+  $('btn-scan-targets').addEventListener('click', openScanModal);
+  $('btn-add-ip-target').addEventListener('click', () => openIPTargetModal(null));
+  $('btn-ip-collect-all').addEventListener('click', () => collectAllIPs(false));
+  $('btn-ip-sync-all').addEventListener('click', () => collectAllIPs(true));
   $('btn-test-netbox').addEventListener('click', testNetbox);
   $('btn-clear-jobs').addEventListener('click', async () => {
     try {
@@ -674,13 +933,26 @@ function bindEvents() {
     renderTargets();
   });
 
+  $('ip-target-search').addEventListener('input', (event) => {
+    state.ipSearch = event.target.value.trim();
+    renderIPTargets();
+  });
+
   $('t-protocol').addEventListener('change', (event) => {
     const defaults = { snmp: 161, ipmi: 623, redfish: 443 };
     toggleProtocolFields(event.target.value);
     setVal('t-port', defaults[event.target.value] || '');
   });
 
+  $('sc-protocol').addEventListener('change', (event) => {
+    const defaults = { snmp: 161, ipmi: 623, redfish: 443 };
+    toggleScanProtocolFields(event.target.value);
+    setVal('sc-port', defaults[event.target.value] || '');
+  });
+
   $('target-form').addEventListener('submit', saveTarget);
+  $('ip-target-form').addEventListener('submit', saveIPTarget);
+  $('scan-form').addEventListener('submit', saveScan);
   $('settings-form').addEventListener('submit', saveSettings);
 
   $('targets-body').addEventListener('click', async (event) => {
@@ -713,6 +985,36 @@ function bindEvents() {
     }
   });
 
+  $('ip-targets-body').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-ip-action]');
+    if (!button) return;
+    const target = state.ipTargets.find((item) => item.id === button.dataset.id);
+    if (!target) return;
+    switch (button.dataset.ipAction) {
+      case 'collect':
+        await collectIPTarget(target, false);
+        break;
+      case 'sync':
+        await collectIPTarget(target, true);
+        break;
+      case 'edit':
+        openIPTargetModal(target);
+        break;
+      case 'delete':
+        if (!confirm(`确定删除 IP 采集目标 ${target.name} 吗？`)) return;
+        try {
+          await api(`/api/ip-targets/${target.id}`, { method: 'DELETE' });
+          toast('IP 采集目标已删除', 'success');
+          await reloadIPTargets();
+        } catch (err) {
+          toast(`删除失败: ${err.message}`, 'error');
+        }
+        break;
+      default:
+        break;
+    }
+  });
+
   $('jobs-body').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-job]');
     if (button) openJob(button.dataset.job);
@@ -724,7 +1026,11 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-close-modal]').forEach((node) => {
-    node.addEventListener('click', closeTargetModal);
+    node.addEventListener('click', () => {
+      closeTargetModal();
+      closeIPTargetModal();
+      closeScanModal();
+    });
   });
   document.querySelectorAll('[data-close-drawer]').forEach((node) => {
     node.addEventListener('click', () => {
@@ -736,6 +1042,8 @@ function bindEvents() {
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (!$('modal-target').classList.contains('hidden')) closeTargetModal();
+    if (!$('modal-iptarget').classList.contains('hidden')) closeIPTargetModal();
+    if (!$('modal-scan').classList.contains('hidden')) closeScanModal();
     if (!$('drawer-job').classList.contains('hidden')) {
       $('drawer-job').classList.add('hidden');
       state.openJobId = null;

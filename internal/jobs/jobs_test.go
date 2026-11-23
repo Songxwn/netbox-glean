@@ -53,6 +53,28 @@ func TestTriggerDefaultsToManual(t *testing.T) {
 	}
 }
 
+func TestStartScanStoresScanResult(t *testing.T) {
+	m := New(Options{})
+	id := m.StartScan(Meta{ID: "scan-1", Name: "office", Protocol: model.ProtocolScan}, "", func(context.Context, model.LogFunc) (*model.ScanResult, error) {
+		return &model.ScanResult{Scanned: 4, Alive: 2, Added: 1, Existing: 1, Devices: []model.ScannedDevice{{Address: "10.0.0.1", Status: "added"}}}, nil
+	})
+	waitForStatus(t, m, id, StatusSuccess)
+	job, ok := m.Get(id)
+	if !ok {
+		t.Fatalf("job %s not found", id)
+	}
+	if job.Mode != model.ModeScan || job.Trigger != TriggerScan {
+		t.Errorf("Mode/Trigger = %q/%q", job.Mode, job.Trigger)
+	}
+	if job.Scan == nil || job.Scan.Added != 1 || len(job.Scan.Devices) != 1 {
+		t.Errorf("unexpected scan result: %#v", job.Scan)
+	}
+	summaries := m.List(10)
+	if len(summaries) != 1 || summaries[0].Found != 2 || summaries[0].Added != 1 {
+		t.Errorf("unexpected summary: %#v", summaries)
+	}
+}
+
 func waitForStatus(t *testing.T, m *Manager, id, want string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

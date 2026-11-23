@@ -2,7 +2,6 @@ package collect
 
 import (
 	"bytes"
-	"context"
 	"net"
 	"sort"
 	"strconv"
@@ -47,36 +46,18 @@ var ndpColumns = []oidColumn{
 	{"state", oidNDPState},
 }
 
-// collectIPDiscovery reads the ARP/NDP tables and, when subnets are
-// configured, runs an ICMP sweep. Every failure is a warning: the rest of the
-// hardware collection still succeeds.
-func collectIPDiscovery(ctx context.Context, params *gosnmp.GoSNMP, ifaces map[string]map[string]string, bulk bool, target model.Target, out *model.Collected, logf model.LogFunc) {
-	if out == nil || !target.DiscoverIPs {
-		return
-	}
+// collectNeighborTables reads the ARP and NDP tables of a device. Every
+// failure is logged and skipped so the caller can still use the other table.
+func collectNeighborTables(params *gosnmp.GoSNMP, ifaces map[string]map[string]string, bulk bool, logf model.LogFunc) []model.IPAddress {
 	arp := collectNeighborTable(params, arpColumns, bulk, "ARP", ifaces, logf)
 	ndp := collectNeighborTable(params, ndpColumns, bulk, "NDP", ifaces, logf)
-	if len(arp)+len(ndp) > 0 {
-		out.IPAddresses = append(out.IPAddresses, arp...)
-		out.IPAddresses = append(out.IPAddresses, ndp...)
+	out := make([]model.IPAddress, 0, len(arp)+len(ndp))
+	out = append(out, arp...)
+	out = append(out, ndp...)
+	if len(out) > 0 {
 		logf("ARP/邻居表: ARP %d 条, NDP %d 条", len(arp), len(ndp))
 	}
-
-	cidrs := target.ScanCIDRs()
-	if len(cidrs) == 0 {
-		return
-	}
-	addresses, warnings := pingSweep(ctx, cidrs, logf)
-	out.Warnings = append(out.Warnings, warnings...)
-	for _, address := range addresses {
-		out.IPAddresses = append(out.IPAddresses, model.IPAddress{
-			Address: address,
-			Source:  "icmp",
-		})
-	}
-	if len(addresses) > 0 {
-		logf("ICMP 扫描存活: %d 个", len(addresses))
-	}
+	return out
 }
 
 func collectNeighborTable(params *gosnmp.GoSNMP, columns []oidColumn, bulk bool, name string, ifaces map[string]map[string]string, logf model.LogFunc) []model.IPAddress {

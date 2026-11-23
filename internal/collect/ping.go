@@ -25,19 +25,20 @@ const (
 	pingTimeout     = 1500 * time.Millisecond
 )
 
-// pingSweep probes every usable IPv4 host in cidrs and returns the addresses
-// that answered an ICMP echo request. Unsupported or oversized ranges are
-// reported as warnings and skipped. If neither an unprivileged ping socket
-// nor a raw ICMP socket can be opened the sweep is skipped.
-func pingSweep(ctx context.Context, cidrs []string, logf model.LogFunc) ([]string, []string) {
+// Sweep probes every usable IPv4 host in cidrs and returns the addresses
+// that answered an ICMP echo request, the number of addresses probed, and any
+// warnings. Unsupported or oversized ranges are skipped. If neither an
+// unprivileged ping socket nor a raw ICMP socket can be opened the sweep is
+// skipped.
+func Sweep(ctx context.Context, cidrs []string, logf model.LogFunc) ([]string, int, []string) {
 	hosts, warnings := expandScanCIDRs(cidrs)
 	if len(hosts) == 0 {
-		return nil, warnings
+		return nil, 0, warnings
 	}
 	conn, unprivileged, err := openPingConn()
 	if err != nil {
 		warnings = append(warnings, "ICMP 扫描不可用（需要 NET_RAW 权限或允许 ping socket）: "+err.Error())
-		return nil, warnings
+		return nil, len(hosts), warnings
 	}
 	defer conn.Close()
 	logf("ICMP 扫描 %d 个地址", len(hosts))
@@ -45,7 +46,7 @@ func pingSweep(ctx context.Context, cidrs []string, logf model.LogFunc) ([]strin
 	deadline := time.Now().Add(pingTimeout)
 	if err := conn.SetReadDeadline(deadline); err != nil {
 		warnings = append(warnings, "ICMP 扫描设置超时失败: "+err.Error())
-		return nil, warnings
+		return nil, len(hosts), warnings
 	}
 
 	var mu sync.Mutex
@@ -129,9 +130,9 @@ func pingSweep(ctx context.Context, cidrs []string, logf model.LogFunc) ([]strin
 	}
 	mu.Unlock()
 	if len(out) == 0 {
-		return nil, warnings
+		return nil, len(hosts), warnings
 	}
-	return out, warnings
+	return out, len(hosts), warnings
 }
 
 // expandScanCIDRs lists the hosts to probe. Network and broadcast addresses

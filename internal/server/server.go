@@ -78,6 +78,16 @@ func New(opts Options) *Server {
 
 	mux.HandleFunc("POST /api/collect", s.handleCollectBatch)
 
+	mux.HandleFunc("GET /api/ip-targets", s.handleListIPTargets)
+	mux.HandleFunc("POST /api/ip-targets", s.handleCreateIPTarget)
+	mux.HandleFunc("GET /api/ip-targets/{id}", s.handleGetIPTarget)
+	mux.HandleFunc("PUT /api/ip-targets/{id}", s.handleUpdateIPTarget)
+	mux.HandleFunc("DELETE /api/ip-targets/{id}", s.handleDeleteIPTarget)
+	mux.HandleFunc("POST /api/ip-targets/{id}/collect", s.handleCollectIPTarget)
+	mux.HandleFunc("POST /api/ip-collect", s.handleCollectIPBatch)
+
+	mux.HandleFunc("POST /api/scan", s.handleScan)
+
 	mux.HandleFunc("GET /api/jobs", s.handleListJobs)
 	mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
 	mux.HandleFunc("DELETE /api/jobs", s.handleClearJobs)

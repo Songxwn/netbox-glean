@@ -7,7 +7,9 @@
 - 管理采集目标（地址、协议、凭据、NetBox 归属覆盖）
 - 一键采集预览，或采集并同步到 NetBox
 - 批量采集所有启用的目标
-- 查看每次采集的日志、硬件摘要和 NetBox 同步结果
+- **批量扫描网段**：ICMP 探活后按协议探测，自动创建采集目标，可立即采集同步
+- **独立的 IP 采集**：读取 SNMP 设备的 ARP/NDP 表，或扫描 IPv4 网段，单独写入 NetBox IPAM
+- 查看每次采集的日志、硬件摘要、扫描结果和 NetBox 同步结果
 - 在线配置 NetBox 连接、默认 Site / Device Role / Platform 和同步策略
 
 [![CI](https://github.com/Songxwn/netbox-glean/actions/workflows/ci.yml/badge.svg)](https://github.com/Songxwn/netbox-glean/actions/workflows/ci.yml)
@@ -23,10 +25,15 @@
   - 厂商、Site、Device Role、Platform、Device Type、Device 自动查找或创建
   - 网卡接口同步（名称、类型、速率、MTU、MAC、启用状态）
   - **LLDP 自动连线**：读取 `LLDP-MIB` 邻居，自动在 NetBox 中创建 Interface 之间的 Cable
-  - **IP 地址发现**：读取 SNMP 设备的 ARP/NDP 表，或对指定 IPv4 网段做 ICMP 扫描；按 MAC 匹配接口后写入 NetBox IPAM
+  - **批量扫描自动添加目标**：输入 IPv4 网段 + 协议 + 凭据，自动发现设备并创建采集目标
   - 硬件组件写入 Inventory Items（CPU、内存、硬盘、电源、风扇、BMC、固件等）
   - 可选设置管理地址为主 IP
   - 可选写入已存在的 `glean_*` 自定义字段
+- **独立的 IP 采集**
+  - 独立的 IP 采集目标、页面、API 与定时任务，与设备采集分离
+  - 读取 SNMP 设备 ARP/NDP 表，或对 IPv4 网段做 ICMP 扫描
+  - 按 MAC 匹配 NetBox 接口后写入 IPAM
+  - 支持批量执行所有启用的 IP 采集目标
 - **NetBox v1 / v2 Token 认证**
   - v1：`Authorization: Token <TOKEN>`
   - v2：`Authorization: Bearer nbt_<key>.<secret>`（NetBox 4.5+）
@@ -53,9 +60,10 @@
 ```
 
 1. 在 Web UI 中配置 NetBox URL、Token、默认 Site 等。
-2. 添加采集目标并填写对应协议凭据。
+2. 添加采集目标并填写对应协议凭据；也可以使用「批量扫描」自动发现并添加目标。
 3. 点击「采集」只预览结果；点击「同步」则采集后写入 NetBox。
-4. 在「任务记录」中查看日志与同步明细。
+4. IP 地址采集在独立的「IP 采集」页面配置，不影响设备采集任务。
+5. 在「任务记录」中查看日志、扫描结果与同步明细。
 
 ## 快速开始
 
@@ -190,6 +198,23 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - IPMI 采集的是 FRU 信息（机箱、主板、产品信息），不会读取传感器或 SEL。
 - 采集结果只是预览，不会写入 NetBox；同步任务才会写入。
 
+### 批量扫描设备
+
+「采集目标」页面顶部和概览页都有「批量扫描」按钮。填写 IPv4 网段、协议、凭据，以及可选的默认 Site / Device Role / Platform / 名称前缀：
+
+1. 先对整个网段做 ICMP 探活，跳过没有响应的地址。
+2. 对存活地址用所选协议做一次快速探测：SNMP 读取 `sysName`，IPMI 建立会话，Redfish 检查 HTTPS 端口。
+3. 探测成功的设备会执行一次完整采集，然后自动创建为采集目标。
+4. 目标已存在（按地址匹配）时标记为「已存在」，不会重复创建。
+5. 勾选「发现后立即采集并同步」时，会为每个新目标提交采集并同步任务。
+
+限制与说明：
+
+- 单次批量扫描最多 256 个地址，ICMP 探活本身单次最多 1024 个地址；建议按 `/24` 或更小网段分批扫描。
+- 同一网段必须使用同一套管理凭据；批量扫描不会猜测凭据。
+- 扫描任务与其他采集任务共享并发限制，设备较多时请提高 `--timeout` 或缩小网段。
+- 扫描结果保存在任务详情中，包含存活、新增、已存在、跳过和失败计数，以及每台设备的处理结果。
+
 ### 定时任务
 
 在目标的编辑窗口勾选「启用定时采集并同步」并填写间隔（分钟，5–10080）即可。行为说明：
@@ -198,8 +223,9 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - 首次启用后会立即执行一次，之后按 `last_run_at + 间隔` 判断是否到期。
 - 同一目标已有排队或运行中的任务时，本轮跳过，避免重复写入。
 - 目标被停用后不会再触发定时任务。
-- 调度状态保存在 `targets.json` 的 `last_run_at` 字段；重启不会丢失。
-- 任务列表与详情会标记触发方式（`manual` / `schedule`）。
+- 设备目标与 IP 采集目标各自独立调度；IP 采集目标的调度信息保存在 `ip_targets.json`。
+- 调度状态保存在 `targets.json` / `ip_targets.json` 的 `last_run_at` 字段；重启不会丢失。
+- 任务列表与详情会标记触发方式（`manual` / `schedule` / `scan`）。
 
 ## 数据映射
 
@@ -212,7 +238,7 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 | 网卡 | Interface（按名称匹配，存在则更新） |
 | LLDP 邻居 | Cable（仅连接 NetBox 中已存在的设备与接口，已连接的接口会跳过） |
 | 硬件组件 | Inventory Item（按名称匹配，存在则更新） |
-| ARP/NDP 邻居、ICMP 存活地址 | IP Address（MAC 匹配到 NetBox 接口后自动分配） |
+| ARP/NDP 邻居、ICMP 存活地址（IP 采集） | IP Address（MAC 匹配到 NetBox 接口后自动分配） |
 | 管理地址 | 可选写入 IP Address 并设为主 IP |
 | CPU / 内存 / BIOS / BMC 等 | 可选写入 `glean_*` 自定义字段 |
 
@@ -231,18 +257,17 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - 可在「设置 → 同步选项」中关闭「按 LLDP 邻居自动创建连线」。
 - NetBox 4.x 使用 `a_terminations` / `b_terminations` 创建 Cable，3.x 使用旧版 termination 字段，工具会自动回退重试。
 
-### IP 地址发现
+### IP 采集
 
-在目标编辑窗口中勾选「启用 IP 地址发现」，采集时会读取 SNMP 设备的 `IP-MIB` 地址转换表：
+IP 地址采集与设备采集完全分开：在「IP 采集」页面新增独立目标，不会修改或依赖设备目标的采集配置。每个 IP 采集目标由两部分组成，至少填写一项：
 
-- `ipNetToMediaTable`：传统 IPv4 ARP 表
-- `ipNetToPhysicalTable`：IPv4 / IPv6 邻居表（NDP）
-
-还可以填写「ICMP 扫描网段」（逗号分隔的 IPv4 CIDR，例如 `10.0.0.0/24, 10.0.1.0/24`）。工具会向网段内每个可用地址发送 ICMP Echo：
-
-- 单次最多扫描 1024 个地址，自动跳过网络地址和广播地址。
-- 仅支持 IPv4；IPv6 邻居仍可通过 `ipNetToPhysicalTable` 读取。
-- 扫描结果会与 ARP/NDP 结果合并，同一地址优先保留 MAC 和接口信息。
+1. **SNMP 来源（可选）**：填写一台三层设备的地址与 SNMP 凭据，读取它的地址转换表：
+   - `ipNetToMediaTable`：传统 IPv4 ARP 表
+   - `ipNetToPhysicalTable`：IPv4 / IPv6 邻居表（NDP）
+2. **扫描网段（可选）**：逗号分隔的 IPv4 CIDR，例如 `10.0.0.0/24, 10.0.1.0/24`。工具会向网段内每个可用地址发送 ICMP Echo：
+   - 单次最多扫描 1024 个地址，自动跳过网络地址和广播地址。
+   - 仅支持 IPv4；IPv6 邻居仍可通过 `ipNetToPhysicalTable` 读取。
+   - 扫描结果会与 ARP/NDP 结果合并，同一地址优先保留 MAC 和接口信息。
 
 写入 NetBox 的行为：
 
@@ -251,7 +276,8 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - 未匹配到接口的 IP 默认跳过，避免把交换机 ARP 表中的手机、打印机等全部写入 IPAM。可在「设置 → 同步选项」勾选「写入未匹配 NetBox 接口的 IP」，以未分配形式写入。
 - 只有 ICMP 扫描结果时拿不到 MAC；需要写入 IPAM 时请开启上面的「写入未匹配 NetBox 接口的 IP」，或同时读取 ARP/NDP 表以获取 MAC。
 - 也可以在「设置 → 同步选项」关闭「同步发现的 IP 地址到 NetBox IPAM」，只查看采集结果。
-- 仅 SNMP 目标会产生 ARP/NDP 数据；ICMP 扫描由本机发起，需要能路由到目标网段。
+- ICMP 扫描由本机发起，需要能路由到目标网段。
+- IP 采集目标同样支持定时任务（「采集并同步」），并可通过「采集全部 / 同步全部」批量执行。
 
 权限说明：
 
@@ -299,14 +325,41 @@ Web UI 使用的接口也可以直接调用：
 | `PUT` | `/api/targets/{id}` | 更新目标；密码留空表示不修改 |
 | `DELETE` | `/api/targets/{id}` | 删除目标 |
 | `POST` | `/api/targets/{id}/collect` | 提交任务，`{"sync": true}` 表示采集并同步 |
-| `POST` | `/api/collect` | 批量提交，`{"target_ids": [], "sync": true}`；不传 ID 表示所有启用目标 |
+| `POST` | `/api/collect` | 批量提交设备采集，`{"target_ids": [], "sync": true}`；不传 ID 表示所有启用目标 |
+| `GET` | `/api/ip-targets` | 列出 IP 采集目标（凭据脱敏） |
+| `POST` | `/api/ip-targets` | 新增 IP 采集目标 |
+| `GET` | `/api/ip-targets/{id}` | IP 采集目标详情 |
+| `PUT` | `/api/ip-targets/{id}` | 更新 IP 采集目标；密码留空表示不修改 |
+| `DELETE` | `/api/ip-targets/{id}` | 删除 IP 采集目标 |
+| `POST` | `/api/ip-targets/{id}/collect` | 提交 IP 采集任务，`{"sync": true}` 表示采集并同步 IPAM |
+| `POST` | `/api/ip-collect` | 批量提交 IP 采集，`{"target_ids": [], "sync": true}`；不传 ID 表示所有启用目标 |
+| `POST` | `/api/scan` | 批量扫描设备并自动添加目标 |
 | `GET` | `/api/jobs` | 任务列表，支持 `?limit=` |
-| `GET` | `/api/jobs/{id}` | 任务详情（含日志与结果） |
+| `GET` | `/api/jobs/{id}` | 任务详情（含日志、采集结果或扫描结果） |
 | `DELETE` | `/api/jobs` | 清理已完成任务 |
 
-目标对象中与定时任务相关的字段：`schedule_enabled`、`schedule_interval_minutes`（分钟）、`last_run_at`（只读，由服务端维护）。任务对象新增 `trigger` 字段（`manual` / `schedule`）。
+目标对象中与定时任务相关的字段：`schedule_enabled`、`schedule_interval_minutes`（分钟）、`last_run_at`（只读，由服务端维护）。任务对象新增 `trigger` 字段（`manual` / `schedule` / `scan`）。
 
-目标对象中与 IP 地址发现相关的字段：`discover_ips`（布尔）、`scan_subnets`（逗号分隔的 IPv4 CIDR）。设置对象新增 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
+IP 采集目标对象的主要字段：`name`、`enabled`、`subnets`（逗号分隔的 IPv4 CIDR）、`address` / `port` / `snmp`（可选 SNMP 来源）、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
+
+批量扫描请求示例：
+
+```json
+{
+  "subnets": "10.0.0.0/24",
+  "protocol": "snmp",
+  "snmp": {"version": "v2c", "community": "public"},
+  "site": "dc1",
+  "device_role": "switch",
+  "name_prefix": "office",
+  "enabled": true,
+  "sync": true
+}
+```
+
+任务详情的 `scan` 字段包含 `scanned`、`alive`、`added`、`existing`、`skipped`、`failed`、`devices` 与 `warnings`。
+
+> **从 v0.4 升级**：旧版 `targets.json` 中的 `discover_ips` / `scan_subnets` 会在首次启动时自动迁移为独立的 IP 采集目标（ID 为 `ip-<目标ID>`），并重写 `targets.json` 移除这两个字段。迁移是幂等的。
 
 示例：
 
@@ -358,7 +411,7 @@ git push origin v0.1.0
 
 ## 安全说明
 
-- **凭据以明文 JSON 保存**在数据目录（`settings.json`、`targets.json`），文件权限为 `0600`。请限制数据目录访问，或将其放在加密卷中。
+- **凭据以明文 JSON 保存**在数据目录（`settings.json`、`targets.json`、`ip_targets.json`），文件权限为 `0600`。请限制数据目录访问，或将其放在加密卷中。
 - Web UI 默认不带登录。暴露到非可信网络前，务必设置 `NETBOX_GLEAN_WEB_USERNAME` / `NETBOX_GLEAN_WEB_PASSWORD`，并通过 HTTPS 反向代理访问。
 - 建议为 NetBox 使用最小权限专用 Token，并定期轮换。
 - SNMP v1/v2c Community 和 IPMI/Redfish 密码会以明文经过网络传输（Redfish 除外，使用 HTTPS）。请仅在受信管理网络中使用。
@@ -375,7 +428,8 @@ git push origin v0.1.0
 - 硬件清单按名称匹配更新，不做删除；重命名组件会在 NetBox 中新增一条记录。
 - LLDP 只能发现直连邻居；远端设备未录入 NetBox、或接口命名与 LLDP 上报不一致时无法自动连线。
 - 每个接口只保留一条 Cable，已有连线不会被自动改写。
-- IP 发现仅对 SNMP 目标生效；ICMP 扫描只支持 IPv4，单次最多 1024 个地址，且需要 `CAP_NET_RAW` 或管理员权限。
+- IP 采集是独立目标；ICMP 扫描只支持 IPv4，单次最多 1024 个地址，且需要 `CAP_NET_RAW` 或管理员权限。
+- 批量设备扫描先做 ICMP 探活，单次最多 256 个地址；未开启 ICMP 权限时无法使用批量扫描。
 - 只有 MAC 能在 NetBox 中找到对应接口时才会自动分配 IP；未匹配地址默认不写入 IPAM。
 - 单次同步最多处理 1000 个 IP，超大 ARP 表会被截断并产生警告。
 - NetBox 写入为逐对象 REST 调用，大规模设备建议分批执行或提高超时。
@@ -408,6 +462,8 @@ internal/config/         命令行与环境变量
 | 设备被创建到错误 Site | 检查目标级 Site 覆盖与默认 Site 设置 |
 | LLDP 邻居为空 | 确认设备已启用 LLDP（`lldpAdminStatus` 为 `enabled`）且对端也在发送 LLDP |
 | 有邻居但没有创建 Cable | 远端设备需先存在于 NetBox；检查远端端口名是否与 NetBox 接口名一致，任务日志会列出跳过的原因 |
+| 批量扫描没有新增目标 | 确认网段路由、ICMP 权限、协议端口放行与凭据正确；任务详情会显示每台设备是跳过还是失败 |
+| IP 采集结果为空 | 确认 IP 采集目标至少配置了扫描网段或 SNMP 来源；ICMP 结果缺少 MAC 时需开启「写入未匹配接口的 IP」 |
 
 日志会随任务保存在内存中，也可通过 `--debug` 查看进程级日志。
 

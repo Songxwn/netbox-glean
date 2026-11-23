@@ -265,7 +265,6 @@ func collectSNMP(ctx context.Context, target model.Target, logf model.LogFunc) (
 	})
 
 	collectLLDP(params, ifaceTable, bulk, out, logf)
-	collectIPDiscovery(ctx, params, ifaceTable, bulk, target, out, logf)
 
 	if len(sys) == 0 && len(entity) == 0 && len(out.Interfaces) == 0 {
 		if firstErr != nil {
@@ -273,48 +272,51 @@ func collectSNMP(ctx context.Context, target model.Target, logf model.LogFunc) (
 		}
 		return nil, fmt.Errorf("SNMP 未返回可用数据")
 	}
-	logf("SNMP 采集完成: 系统字段 %d, 组件 %d, 接口 %d, LLDP 邻居 %d, IP 地址 %d", len(sys), len(out.Components), len(out.Interfaces), len(out.Neighbors), len(out.IPAddresses))
+	logf("SNMP 采集完成: 系统字段 %d, 组件 %d, 接口 %d, LLDP 邻居 %d", len(sys), len(out.Components), len(out.Interfaces), len(out.Neighbors))
 	return out, nil
 }
 
 func buildSNMPParams(target model.Target) (*gosnmp.GoSNMP, error) {
-	port := target.Port
+	return buildSNMPParamsFor(target.Address, target.Port, target.SNMP)
+}
+
+func buildSNMPParamsFor(address string, port int, cfg model.SNMPConfig) (*gosnmp.GoSNMP, error) {
 	if port == 0 {
 		port = 161
 	}
 	params := &gosnmp.GoSNMP{
-		Target:         target.Address,
+		Target:         address,
 		Port:           uint16(port),
 		Timeout:        5 * time.Second,
 		Retries:        2,
 		MaxRepetitions: 25,
 		MaxOids:        gosnmp.MaxOids,
 	}
-	switch strings.ToLower(target.SNMP.Version) {
+	switch strings.ToLower(cfg.Version) {
 	case "", "2", "2c", "v2", "v2c":
 		params.Version = gosnmp.Version2c
-		params.Community = target.SNMP.Community
+		params.Community = cfg.Community
 	case "1", "v1":
 		params.Version = gosnmp.Version1
-		params.Community = target.SNMP.Community
+		params.Community = cfg.Community
 	case "3", "v3":
 		params.Version = gosnmp.Version3
 		params.SecurityModel = gosnmp.UserSecurityModel
 		params.MsgFlags = gosnmp.AuthPriv
-		if target.SNMP.V3AuthPassword == "" {
+		if cfg.V3AuthPassword == "" {
 			params.MsgFlags = gosnmp.NoAuthNoPriv
-		} else if target.SNMP.V3PrivPassword == "" {
+		} else if cfg.V3PrivPassword == "" {
 			params.MsgFlags = gosnmp.AuthNoPriv
 		}
 		params.SecurityParameters = &gosnmp.UsmSecurityParameters{
-			UserName:                 target.SNMP.V3Username,
-			AuthenticationProtocol:   snmpAuthProtocol(target.SNMP.V3AuthProtocol),
-			AuthenticationPassphrase: target.SNMP.V3AuthPassword,
-			PrivacyProtocol:          snmpPrivProtocol(target.SNMP.V3PrivProtocol),
-			PrivacyPassphrase:        target.SNMP.V3PrivPassword,
+			UserName:                 cfg.V3Username,
+			AuthenticationProtocol:   snmpAuthProtocol(cfg.V3AuthProtocol),
+			AuthenticationPassphrase: cfg.V3AuthPassword,
+			PrivacyProtocol:          snmpPrivProtocol(cfg.V3PrivProtocol),
+			PrivacyPassphrase:        cfg.V3PrivPassword,
 		}
 	default:
-		return nil, fmt.Errorf("不支持的 SNMP 版本 %q", target.SNMP.Version)
+		return nil, fmt.Errorf("不支持的 SNMP 版本 %q", cfg.Version)
 	}
 	return params, nil
 }

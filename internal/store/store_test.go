@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,5 +109,81 @@ func TestMarkTargetRunPersists(t *testing.T) {
 	}
 	if err := reopened.MarkTargetRun("missing", at); err != nil {
 		t.Fatalf("MarkTargetRun for missing target: %v", err)
+	}
+}
+func TestIPTargetPersistence(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	saved, err := s.SaveIPTarget(model.IPTarget{
+		Name:    "office sweep",
+		Enabled: true,
+		Subnets: "10.0.0.0/24",
+	})
+	if err != nil {
+		t.Fatalf("SaveIPTarget: %v", err)
+	}
+	at := time.Date(2026, 11, 23, 6, 0, 0, 0, time.UTC)
+	if err := s.MarkIPTargetRun(saved.ID, at); err != nil {
+		t.Fatalf("MarkIPTargetRun: %v", err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	target, ok := reopened.IPTarget(saved.ID)
+	if !ok {
+		t.Fatalf("IP target %s not found after reopen", saved.ID)
+	}
+	if target.Subnets != "10.0.0.0/24" || target.LastRunAt == nil || !target.LastRunAt.Equal(at) {
+		t.Fatalf("unexpected IP target: %#v", target)
+	}
+	if found, err := reopened.DeleteIPTarget(saved.ID); err != nil || !found {
+		t.Fatalf("DeleteIPTarget = %v, %v", found, err)
+	}
+}
+
+func TestLegacyIPDiscoveryMigration(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `[{
+		"id":"t1","name":"core-1","protocol":"snmp","address":"10.0.0.1","port":161,
+		"enabled":true,"discover_ips":true,"scan_subnets":"10.0.0.0/24",
+		"snmp":{"version":"v2c","community":"public"},
+		"schedule_enabled":true,"schedule_interval_minutes":30
+	}]`
+	if err := os.WriteFile(filepath.Join(dir, "targets.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	target, ok := s.IPTarget("ip-t1")
+	if !ok {
+		t.Fatal("legacy discover_ips target was not migrated")
+	}
+	if target.Address != "10.0.0.1" || target.Subnets != "10.0.0.0/24" || !target.ScheduleEnabled {
+		t.Fatalf("unexpected migrated target: %#v", target)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "targets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, key := range []string{"discover_ips", "scan_subnets"} {
+		if strings.Contains(content, key) {
+			t.Fatalf("targets.json still contains %s: %s", key, content)
+		}
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if got := len(reopened.IPTargets()); got != 1 {
+		t.Fatalf("migration duplicated IP targets: %d", got)
 	}
 }

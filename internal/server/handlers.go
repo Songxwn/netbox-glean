@@ -171,14 +171,23 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 			enabled++
 		}
 	}
+	ipTargets := s.store.IPTargets()
+	ipEnabled := 0
+	for _, t := range ipTargets {
+		if t.Enabled {
+			ipEnabled++
+		}
+	}
 	settings := s.store.Settings()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"targets":           len(targets),
-		"targets_enabled":   enabled,
-		"by_protocol":       byProtocol,
-		"jobs":              s.jobs.Stats(),
-		"netbox_configured": settings.NetboxURL != "",
-		"site":              settings.Site,
+		"targets":            len(targets),
+		"targets_enabled":    enabled,
+		"ip_targets":         len(ipTargets),
+		"ip_targets_enabled": ipEnabled,
+		"by_protocol":        byProtocol,
+		"jobs":               s.jobs.Stats(),
+		"netbox_configured":  settings.NetboxURL != "",
+		"site":               settings.Site,
 	})
 }
 
@@ -328,6 +337,170 @@ func (s *Server) handleCollectBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"count": len(jobs), "jobs": jobs})
 }
 
+func (s *Server) handleListIPTargets(w http.ResponseWriter, _ *http.Request) {
+	targets := s.store.IPTargets()
+	out := make([]model.IPTarget, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, sanitizeIPTarget(t))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleGetIPTarget(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.store.IPTarget(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "IP 采集目标不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeIPTarget(target))
+}
+
+func (s *Server) handleCreateIPTarget(w http.ResponseWriter, r *http.Request) {
+	var target model.IPTarget
+	if !readJSON(w, r, &target) {
+		return
+	}
+	target.ID = ""
+	target.CreatedAt = time.Time{}
+	target.UpdatedAt = time.Time{}
+	target.LastRunAt = nil
+	model.NormalizeIPTarget(&target)
+	if err := model.ValidateIPTarget(target); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	saved, err := s.store.SaveIPTarget(target)
+	if err != nil {
+		s.logger.Error("save ip target", "error", err)
+		writeError(w, http.StatusInternalServerError, "保存 IP 采集目标失败")
+		return
+	}
+	writeJSON(w, http.StatusCreated, sanitizeIPTarget(saved))
+}
+
+func (s *Server) handleUpdateIPTarget(w http.ResponseWriter, r *http.Request) {
+	existing, ok := s.store.IPTarget(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "IP 采集目标不存在")
+		return
+	}
+	var target model.IPTarget
+	if !readJSON(w, r, &target) {
+		return
+	}
+	target.ID = existing.ID
+	target.CreatedAt = existing.CreatedAt
+	target.LastRunAt = existing.LastRunAt
+	mergeIPTargetSecrets(&target, existing)
+	model.NormalizeIPTarget(&target)
+	if err := model.ValidateIPTarget(target); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	saved, err := s.store.SaveIPTarget(target)
+	if err != nil {
+		s.logger.Error("save ip target", "error", err)
+		writeError(w, http.StatusInternalServerError, "保存 IP 采集目标失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeIPTarget(saved))
+}
+
+func (s *Server) handleDeleteIPTarget(w http.ResponseWriter, r *http.Request) {
+	found, err := s.store.DeleteIPTarget(r.PathValue("id"))
+	if err != nil {
+		s.logger.Error("delete ip target", "error", err)
+		writeError(w, http.StatusInternalServerError, "删除 IP 采集目标失败")
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "IP 采集目标不存在")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleCollectIPTarget(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.store.IPTarget(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "IP 采集目标不存在")
+		return
+	}
+	var req struct {
+		Sync bool `json:"sync"`
+	}
+	if !readOptionalJSON(w, r, &req) {
+		return
+	}
+	jobID := s.startIPJob(target, req.Sync)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"job_id":      jobID,
+		"target_id":   target.ID,
+		"target_name": target.Name,
+		"sync":        req.Sync,
+	})
+}
+
+func (s *Server) handleCollectIPBatch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TargetIDs []string `json:"target_ids"`
+		Sync      bool     `json:"sync"`
+	}
+	if !readOptionalJSON(w, r, &req) {
+		return
+	}
+	var targets []model.IPTarget
+	if len(req.TargetIDs) > 0 {
+		for _, id := range req.TargetIDs {
+			if target, ok := s.store.IPTarget(id); ok {
+				targets = append(targets, target)
+			}
+		}
+	} else {
+		for _, target := range s.store.IPTargets() {
+			if target.Enabled {
+				targets = append(targets, target)
+			}
+		}
+	}
+	if len(targets) == 0 {
+		writeError(w, http.StatusBadRequest, "没有可执行的 IP 采集目标")
+		return
+	}
+	type started struct {
+		JobID      string `json:"job_id"`
+		TargetID   string `json:"target_id"`
+		TargetName string `json:"target_name"`
+	}
+	out := make([]started, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, started{
+			JobID:      s.startIPJob(target, req.Sync),
+			TargetID:   target.ID,
+			TargetName: target.Name,
+		})
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"count": len(out), "jobs": out})
+}
+
+func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
+	var req model.ScanRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	model.NormalizeScanRequest(&req)
+	if err := model.ValidateScanRequest(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	jobID := s.startScanJob(req, "")
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"job_id":   jobID,
+		"subnets":  req.Subnets,
+		"protocol": req.Protocol,
+	})
+}
+
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -376,5 +549,24 @@ func mergeTargetSecrets(target *model.Target, existing model.Target) {
 	}
 	if target.Redfish.Password == "" {
 		target.Redfish.Password = existing.Redfish.Password
+	}
+}
+
+func sanitizeIPTarget(t model.IPTarget) model.IPTarget {
+	t.SNMP.Community = ""
+	t.SNMP.V3AuthPassword = ""
+	t.SNMP.V3PrivPassword = ""
+	return t
+}
+
+func mergeIPTargetSecrets(target *model.IPTarget, existing model.IPTarget) {
+	if target.SNMP.Community == "" {
+		target.SNMP.Community = existing.SNMP.Community
+	}
+	if target.SNMP.V3AuthPassword == "" {
+		target.SNMP.V3AuthPassword = existing.SNMP.V3AuthPassword
+	}
+	if target.SNMP.V3PrivPassword == "" {
+		target.SNMP.V3PrivPassword = existing.SNMP.V3PrivPassword
 	}
 }

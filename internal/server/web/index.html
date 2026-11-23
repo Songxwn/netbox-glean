@@ -25,6 +25,7 @@
     <nav class="nav">
       <button class="nav-item active" data-page="dashboard">概览</button>
       <button class="nav-item" data-page="targets">采集目标</button>
+      <button class="nav-item" data-page="iptargets">IP 采集</button>
       <button class="nav-item" data-page="jobs">任务记录</button>
       <button class="nav-item" data-page="settings">设置</button>
     </nav>
@@ -43,6 +44,7 @@
       <div class="top-actions">
         <button class="btn" id="btn-collect-all">采集全部</button>
         <button class="btn primary" id="btn-sync-all">同步全部</button>
+        <button class="btn" id="btn-scan">批量扫描</button>
       </div>
     </header>
 
@@ -98,6 +100,7 @@
     <section class="page hidden" id="page-targets">
       <div class="toolbar">
         <input class="input search" id="target-search" type="search" placeholder="搜索名称或地址">
+        <button class="btn" id="btn-scan-targets">批量扫描</button>
         <button class="btn primary" id="btn-add-target">新增目标</button>
       </div>
       <div class="panel">
@@ -106,7 +109,7 @@
             <thead>
               <tr>
                 <th>名称</th><th>协议</th><th>地址</th><th>Site</th>
-                <th>NetBox 设备</th><th>定时</th><th>IP 发现</th><th>状态</th><th class="right">操作</th>
+                <th>NetBox 设备</th><th>定时</th><th>状态</th><th class="right">操作</th>
               </tr>
             </thead>
             <tbody id="targets-body"></tbody>
@@ -114,6 +117,31 @@
         </div>
         <div class="empty hidden" id="targets-empty">
           还没有采集目标。点击“新增目标”开始，需要先在设置中配置 NetBox。
+        </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-iptargets">
+      <div class="toolbar">
+        <input class="input search" id="ip-target-search" type="search" placeholder="搜索名称或网段">
+        <button class="btn" id="btn-ip-collect-all">采集全部</button>
+        <button class="btn" id="btn-ip-sync-all">同步全部</button>
+        <button class="btn primary" id="btn-add-ip-target">新增 IP 采集</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>名称</th><th>类型</th><th>扫描网段</th>
+                <th>定时</th><th>状态</th><th class="right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="ip-targets-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="ip-targets-empty">
+          还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4 网段，并把结果写入 NetBox IPAM。
         </div>
       </div>
     </section>
@@ -129,7 +157,7 @@
             <thead>
               <tr>
                 <th>目标</th><th>协议</th><th>模式</th><th>状态</th>
-                <th>接口</th><th>组件</th><th>开始时间</th><th>耗时</th><th class="right">操作</th>
+                <th>接口 / 发现</th><th>组件 / 新增</th><th>开始时间</th><th>耗时</th><th class="right">操作</th>
               </tr>
             </thead>
             <tbody id="jobs-body"></tbody>
@@ -371,21 +399,6 @@
         </div>
       </fieldset>
 
-      <fieldset class="proto proto-snmp">
-        <legend>IP 地址发现</legend>
-        <div class="form-grid">
-          <label class="field checkbox-field">
-            <input type="checkbox" id="t-discover-ips">
-            <span>启用 IP 地址发现（ARP/NDP + ICMP 扫描）</span>
-          </label>
-          <label class="field">
-            <span>ICMP 扫描网段（可选，逗号分隔）</span>
-            <input class="input" id="t-scan-subnets" placeholder="10.0.0.0/24, 10.0.1.0/24" autocomplete="off">
-          </label>
-        </div>
-        <p class="muted hint">仅 SNMP 目标生效。ICMP 扫描需要 NET_RAW 权限（容器已授权，Windows 需管理员）；单次最多扫描 1024 个地址。</p>
-      </fieldset>
-
       <fieldset class="proto proto-ipmi hidden">
         <legend>IPMI</legend>
         <div class="form-grid">
@@ -432,6 +445,264 @@
       <div class="form-actions">
         <button class="btn" type="button" data-close-modal>取消</button>
         <button class="btn primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal hidden" id="modal-iptarget">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="ip-target-modal-title">新增 IP 采集</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+    </div>
+    <form id="ip-target-form">
+      <div class="form-grid">
+        <label class="field">
+          <span>名称</span>
+          <input class="input" id="it-name" autocomplete="off" placeholder="办公网 IP 采集">
+        </label>
+        <label class="field checkbox-field">
+          <input type="checkbox" id="it-enabled" checked>
+          <span>启用该目标（参与“采集全部”与定时任务）</span>
+        </label>
+        <label class="field span-2">
+          <span>扫描网段（IPv4 CIDR，逗号分隔）</span>
+          <input class="input" id="it-subnets" placeholder="10.0.0.0/24, 10.0.1.0/24" autocomplete="off">
+          <small>通过 ICMP 探活，用于发现网段内的地址。可与 SNMP 来源二选一或同时使用。</small>
+        </label>
+      </div>
+
+      <fieldset class="schedule-box">
+        <legend>SNMP 来源（可选）</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>设备地址</span>
+            <input class="input" id="it-source-address" placeholder="10.0.0.1" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>端口</span>
+            <input class="input" id="it-source-port" type="number" min="0" max="65535" step="1" value="161">
+          </label>
+          <label class="field">
+            <span>SNMP 版本</span>
+            <select class="input" id="is-version">
+              <option value="v2c">v2c</option>
+              <option value="v1">v1</option>
+              <option value="v3">v3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Community</span>
+            <input class="input" id="is-community" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>v3 用户名</span>
+            <input class="input" id="is-v3-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>v3 认证协议</span>
+            <select class="input" id="is-v3-auth-proto">
+              <option value="SHA256">SHA256</option>
+              <option value="SHA">SHA1</option>
+              <option value="MD5">MD5</option>
+              <option value="SHA224">SHA224</option>
+              <option value="SHA384">SHA384</option>
+              <option value="SHA512">SHA512</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>v3 认证密码</span>
+            <input class="input" id="is-v3-auth-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>v3 加密协议</span>
+            <select class="input" id="is-v3-priv-proto">
+              <option value="AES">AES</option>
+              <option value="DES">DES</option>
+              <option value="AES192">AES192</option>
+              <option value="AES256">AES256</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>v3 加密密码</span>
+            <input class="input" id="is-v3-priv-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+          </label>
+        </div>
+        <p class="muted">读取该设备的 ARP/NDP 表，按 MAC 匹配 NetBox 接口后写入 IPAM。</p>
+      </fieldset>
+
+      <fieldset class="schedule-box">
+        <legend>定时任务</legend>
+        <div class="form-grid">
+          <label class="field checkbox-field">
+            <input type="checkbox" id="it-schedule-enabled">
+            <span>启用定时采集并同步</span>
+          </label>
+          <label class="field">
+            <span>间隔（分钟）</span>
+            <input class="input" id="it-schedule-interval" type="number" min="5" max="10080" step="1" value="60">
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="btn" type="button" data-close-modal>取消</button>
+        <button class="btn primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal hidden" id="modal-scan">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>批量扫描设备</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+    </div>
+    <form id="scan-form">
+      <div class="form-grid">
+        <label class="field span-2">
+          <span>扫描网段（IPv4 CIDR，逗号分隔）</span>
+          <input class="input" id="sc-subnets" required placeholder="10.0.0.0/24" autocomplete="off">
+          <small>先 ICMP 探活，再用下面的协议与凭据逐台探测并采集；单次最多 256 个地址。</small>
+        </label>
+        <label class="field">
+          <span>协议</span>
+          <select class="input" id="sc-protocol">
+            <option value="snmp">SNMP</option>
+            <option value="ipmi">IPMI</option>
+            <option value="redfish">Redfish</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>端口</span>
+          <input class="input" id="sc-port" type="number" min="0" max="65535" step="1" value="161">
+        </label>
+        <label class="field">
+          <span>Site slug（可选）</span>
+          <input class="input" id="sc-site" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Device role（可选）</span>
+          <input class="input" id="sc-role" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Platform（可选）</span>
+          <input class="input" id="sc-platform" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>名称前缀（可选）</span>
+          <input class="input" id="sc-name-prefix" placeholder="例如 office" autocomplete="off">
+        </label>
+        <label class="field checkbox-field">
+          <input type="checkbox" id="sc-enabled" checked>
+          <span>新目标默认启用</span>
+        </label>
+        <label class="field checkbox-field">
+          <input type="checkbox" id="sc-sync">
+          <span>发现后立即采集并同步到 NetBox</span>
+        </label>
+      </div>
+
+      <fieldset class="scan-proto scan-proto-snmp">
+        <legend>SNMP 凭据</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>版本</span>
+            <select class="input" id="sc-s-version">
+              <option value="v2c">v2c</option>
+              <option value="v1">v1</option>
+              <option value="v3">v3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Community</span>
+            <input class="input" id="sc-s-community" type="password" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>v3 用户名</span>
+            <input class="input" id="sc-s-v3-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>v3 认证协议</span>
+            <select class="input" id="sc-s-v3-auth-proto">
+              <option value="SHA256">SHA256</option>
+              <option value="SHA">SHA1</option>
+              <option value="MD5">MD5</option>
+              <option value="SHA224">SHA224</option>
+              <option value="SHA384">SHA384</option>
+              <option value="SHA512">SHA512</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>v3 认证密码</span>
+            <input class="input" id="sc-s-v3-auth-pass" type="password" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>v3 加密协议</span>
+            <select class="input" id="sc-s-v3-priv-proto">
+              <option value="AES">AES</option>
+              <option value="DES">DES</option>
+              <option value="AES192">AES192</option>
+              <option value="AES256">AES256</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>v3 加密密码</span>
+            <input class="input" id="sc-s-v3-priv-pass" type="password" autocomplete="new-password">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="scan-proto scan-proto-ipmi hidden">
+        <legend>IPMI 凭据</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>用户名</span>
+            <input class="input" id="sc-i-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input class="input" id="sc-i-pass" type="password" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>接口</span>
+            <select class="input" id="sc-i-interface">
+              <option value="lanplus">lanplus (IPMI 2.0)</option>
+              <option value="lan">lan (IPMI 1.5)</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="scan-proto scan-proto-redfish hidden">
+        <legend>Redfish 凭据</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>用户名</span>
+            <input class="input" id="sc-r-user" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input class="input" id="sc-r-pass" type="password" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>System ID（可选）</span>
+            <input class="input" id="sc-r-system" placeholder="1" autocomplete="off">
+          </label>
+          <label class="field checkbox-field">
+            <input type="checkbox" id="sc-r-insecure">
+            <span>跳过 TLS 证书校验</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="btn" type="button" data-close-modal>取消</button>
+        <button class="btn primary" type="submit">开始扫描</button>
       </div>
     </form>
   </div>
