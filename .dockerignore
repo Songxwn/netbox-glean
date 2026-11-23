@@ -1,12 +1,6 @@
 .git
 .github
-.gitignore
-.gitattributes
-Dockerfile
-.dockerignore
-Makefile
-README.md
-LICENSE
+bin
 dist
 data
 *.exe

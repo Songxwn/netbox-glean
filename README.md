@@ -22,6 +22,7 @@
 - **自动写入 NetBox**
   - 厂商、Site、Device Role、Platform、Device Type、Device 自动查找或创建
   - 网卡接口同步（名称、类型、速率、MTU、MAC、启用状态）
+  - **LLDP 自动连线**：读取 `LLDP-MIB` 邻居，自动在 NetBox 中创建 Interface 之间的 Cable
   - 硬件组件写入 Inventory Items（CPU、内存、硬盘、电源、风扇、BMC、固件等）
   - 可选设置管理地址为主 IP
   - 可选写入已存在的 `glean_*` 自定义字段
@@ -74,19 +75,32 @@ Windows：
 
 ### 使用 Docker
 
+GitHub Actions 会把镜像推送到 GitHub Container Registry：推送 `main` 时更新 `latest`，推送 `v*` 标签时同时生成版本号标签。
+
 ```bash
-docker build -t netbox-glean .
 docker run -d --name netbox-glean \
   -p 8080:8080 \
   -v glean-data:/data \
   -e NETBOX_GLEAN_WEB_USERNAME=admin \
   -e NETBOX_GLEAN_WEB_PASSWORD=change-me \
-  netbox-glean
+  ghcr.io/songxwn/netbox-glean:latest
 ```
 
-或使用 Docker Compose：
+GHCR 包首次推送后默认是**私有**的，可在 GitHub 的包页面（Profile → Packages）把 `netbox-glean` 的可见性改为 `Public`，之后即可匿名拉取；保持私有时需要先登录：
 
 ```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+```
+
+镜像同时支持 `linux/amd64` 与 `linux/arm64`。
+
+或使用 Docker Compose（默认拉取 GHCR 镜像，本地修改代码时用 `--build`）：
+
+```bash
+docker compose pull
+docker compose up -d
+
+# 使用本地源码构建
 docker compose up -d --build
 ```
 
@@ -109,7 +123,7 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 推荐为 `netbox-glean` 创建专用 Token，至少具备以下对象的新增/修改/删除权限：
 
 - `dcim.manufacturer`、`dcim.site`、`dcim.devicetype`、`dcim.devicerole`、`dcim.platform`
-- `dcim.device`、`dcim.interface`、`dcim.inventoryitem`
+- `dcim.device`、`dcim.interface`、`dcim.inventoryitem`、`dcim.cable`
 - `ipam.ipaddress`
 - `extras.customfield`（只读，用于检测字段是否存在）
 
@@ -180,6 +194,7 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 | 序列号、资产标签 | Device `serial` / `asset_tag` |
 | 名称 | Device `name`（优先使用目标中的设备名覆盖） |
 | 网卡 | Interface（按名称匹配，存在则更新） |
+| LLDP 邻居 | Cable（仅连接 NetBox 中已存在的设备与接口，已连接的接口会跳过） |
 | 硬件组件 | Inventory Item（按名称匹配，存在则更新） |
 | 管理地址 | 可选写入 IP Address 并设为主 IP |
 | CPU / 内存 / BIOS / BMC 等 | 可选写入 `glean_*` 自定义字段 |
@@ -189,6 +204,15 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - 「删除本次未采集到的接口」默认关闭；开启后只删除该设备下、未出现在本次采集结果中的接口。
 - 管理接口（默认 `mgmt0`）不会被自动删除。
 - 硬件清单不会删除历史组件，避免误删人工维护的数据。
+
+### LLDP 自动连线
+
+- 仅 SNMP 目标会读取 LLDP（`LLDP-MIB` 的 `lldpRemTable`），IPMI 与 Redfish 目标不会产生邻居数据。
+- 同步顺序为：设备 → 接口 → Cable，因此新建的接口也可以立即连线。
+- 远端设备必须已存在于 NetBox，按设备名匹配（优先同一 Site）；远端端口依次按 `lldpRemPortId`、`lldpRemPortDesc`、MAC 地址匹配。
+- 已经存在 Cable 的接口会跳过，不覆盖人工维护的连线。
+- 可在「设置 → 同步选项」中关闭「按 LLDP 邻居自动创建连线」。
+- NetBox 4.x 使用 `a_terminations` / `b_terminations` 创建 Cable，3.x 使用旧版 termination 字段，工具会自动回退重试。
 
 ## 配置
 
@@ -261,6 +285,7 @@ make dist           # 生成多平台二进制
 - `.github/workflows/release.yml`：
   - 推送 `v*` 标签时，交叉编译所有目标平台并发布 GitHub Release
   - 手动触发时只构建并保留工作流产物
+- `.github/workflows/docker.yml`：构建 `linux/amd64` / `linux/arm64` 多架构镜像并推送到 GHCR（`latest`、分支、语义化版本和 `sha-` 标签）。
 
 发布：
 
@@ -295,6 +320,8 @@ git push origin v0.1.0
 - SNMP 采集以标准 MIB（`ENTITY-MIB`、`IF-MIB`）为主，厂商私有 MIB 未覆盖。
 - IPMI 仅采集 FRU，不采集传感器、SEL、SOL。
 - 硬件清单按名称匹配更新，不做删除；重命名组件会在 NetBox 中新增一条记录。
+- LLDP 只能发现直连邻居；远端设备未录入 NetBox、或接口命名与 LLDP 上报不一致时无法自动连线。
+- 每个接口只保留一条 Cable，已有连线不会被自动改写。
 - NetBox 写入为逐对象 REST 调用，大规模设备建议分批执行或提高超时。
 
 ## 目录结构
@@ -309,7 +336,7 @@ internal/jobs/           后台任务管理
 internal/server/         HTTP API 与 Web UI
 internal/server/web/     前端静态资源（go:embed）
 internal/config/         命令行与环境变量
-.github/workflows/       CI 与 Release
+.github/workflows/       CI / Release / 容器镜像
 ```
 
 ## 故障排查

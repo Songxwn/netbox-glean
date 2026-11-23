@@ -1,10 +1,12 @@
 services:
   netbox-glean:
+    # 默认使用 GitHub Actions 构建并推送到 GHCR 的镜像；
+    # 修改代码后执行 `docker compose up -d --build` 会改用本地构建。
+    image: ${GLEAN_IMAGE:-ghcr.io/songxwn/netbox-glean:latest}
     build:
       context: .
       args:
-        VERSION: dev
-    image: netbox-glean:latest
+        VERSION: ${GLEAN_VERSION:-dev}
     container_name: netbox-glean
     restart: unless-stopped
     ports:
