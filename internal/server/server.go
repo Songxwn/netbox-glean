@@ -86,6 +86,14 @@ func New(opts Options) *Server {
 	mux.HandleFunc("POST /api/ip-targets/{id}/collect", s.handleCollectIPTarget)
 	mux.HandleFunc("POST /api/ip-collect", s.handleCollectIPBatch)
 
+	mux.HandleFunc("GET /api/cloud-targets", s.handleListCloudTargets)
+	mux.HandleFunc("POST /api/cloud-targets", s.handleCreateCloudTarget)
+	mux.HandleFunc("GET /api/cloud-targets/{id}", s.handleGetCloudTarget)
+	mux.HandleFunc("PUT /api/cloud-targets/{id}", s.handleUpdateCloudTarget)
+	mux.HandleFunc("DELETE /api/cloud-targets/{id}", s.handleDeleteCloudTarget)
+	mux.HandleFunc("POST /api/cloud-targets/{id}/collect", s.handleCollectCloudTarget)
+	mux.HandleFunc("POST /api/cloud-collect", s.handleCollectCloudBatch)
+
 	mux.HandleFunc("POST /api/scan", s.handleScan)
 
 	mux.HandleFunc("GET /api/jobs", s.handleListJobs)

@@ -29,21 +29,22 @@ const (
 
 // Job is one collection or sync run.
 type Job struct {
-	ID         string           `json:"id"`
-	TargetID   string           `json:"target_id"`
-	TargetName string           `json:"target_name"`
-	Protocol   string           `json:"protocol"`
-	Mode       string           `json:"mode"`
-	Trigger    string           `json:"trigger"`
-	Status     string           `json:"status"`
-	CreatedAt  time.Time        `json:"created_at"`
-	StartedAt  *time.Time       `json:"started_at,omitempty"`
-	FinishedAt *time.Time       `json:"finished_at,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	Log        []string          `json:"log,omitempty"`
-	Result     *model.Collected  `json:"result,omitempty"`
-	Sync       *model.SyncResult `json:"sync,omitempty"`
-	Scan       *model.ScanResult `json:"scan,omitempty"`
+	ID         string             `json:"id"`
+	TargetID   string             `json:"target_id"`
+	TargetName string             `json:"target_name"`
+	Protocol   string             `json:"protocol"`
+	Mode       string             `json:"mode"`
+	Trigger    string             `json:"trigger"`
+	Status     string             `json:"status"`
+	CreatedAt  time.Time          `json:"created_at"`
+	StartedAt  *time.Time         `json:"started_at,omitempty"`
+	FinishedAt *time.Time         `json:"finished_at,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	Log        []string           `json:"log,omitempty"`
+	Result     *model.Collected   `json:"result,omitempty"`
+	Sync       *model.SyncResult  `json:"sync,omitempty"`
+	Scan       *model.ScanResult  `json:"scan,omitempty"`
+	Cloud      *model.CloudResult `json:"cloud,omitempty"`
 }
 
 // JobSummary is the lightweight form used by list endpoints.
@@ -78,6 +79,9 @@ type RunFunc func(ctx context.Context, logf model.LogFunc) (*model.Collected, *m
 
 // ScanRunFunc performs a batch device scan.
 type ScanRunFunc func(ctx context.Context, logf model.LogFunc) (*model.ScanResult, error)
+
+// CloudRunFunc performs a cloud asset discovery run and optional sync.
+type CloudRunFunc func(ctx context.Context, logf model.LogFunc) (*model.CloudResult, *model.SyncResult, error)
 
 // Options configures the manager.
 type Options struct {
@@ -146,6 +150,19 @@ func (m *Manager) StartScan(meta Meta, trigger string, run ScanRunFunc) string {
 	return job.ID
 }
 
+// StartCloud queues a cloud asset discovery job.
+func (m *Manager) StartCloud(meta Meta, mode, trigger string, run CloudRunFunc) string {
+	if trigger == "" {
+		trigger = TriggerManual
+	}
+	job := m.newJob(meta, mode, trigger)
+	go m.execute(job, func(ctx context.Context, logf model.LogFunc) jobOutcome {
+		cloud, sync, err := run(ctx, logf)
+		return jobOutcome{cloud: cloud, sync: sync, err: err}
+	})
+	return job.ID
+}
+
 func (m *Manager) newJob(meta Meta, mode, trigger string) *Job {
 	job := &Job{
 		ID:         newID(),
@@ -169,6 +186,7 @@ type jobOutcome struct {
 	collected *model.Collected
 	sync      *model.SyncResult
 	scan      *model.ScanResult
+	cloud     *model.CloudResult
 	err       error
 }
 
@@ -205,6 +223,7 @@ func (m *Manager) execute(job *Job, run func(context.Context, model.LogFunc) job
 	job.Result = out.collected
 	job.Sync = out.sync
 	job.Scan = out.scan
+	job.Cloud = out.cloud
 	if out.err != nil {
 		err := out.err
 		if ctx.Err() == context.DeadlineExceeded {
@@ -281,6 +300,10 @@ func (m *Manager) List(limit int) []JobSummary {
 		if job.Scan != nil {
 			summary.Found = job.Scan.Alive
 			summary.Added = job.Scan.Added
+		}
+		if job.Cloud != nil {
+			summary.Found = len(job.Cloud.Addresses)
+			summary.Added = len(job.Cloud.Prefixes)
 		}
 		out = append(out, summary)
 	}

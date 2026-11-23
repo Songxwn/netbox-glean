@@ -146,6 +146,78 @@ func TestIPTargetPersistence(t *testing.T) {
 	}
 }
 
+func TestCloudTargetPersistence(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	saved, err := s.SaveCloudTarget(model.CloudTarget{
+		Name:             "prod aliyun",
+		Provider:         model.CloudAliyun,
+		Region:           "cn-hangzhou",
+		AccessKey:        "ak",
+		SecretKey:        "sk",
+		CollectPrefixes:  true,
+		CollectInstances: true,
+	})
+	if err != nil {
+		t.Fatalf("SaveCloudTarget: %v", err)
+	}
+	at := time.Date(2026, 11, 23, 7, 0, 0, 0, time.UTC)
+	if err := s.MarkCloudTargetRun(saved.ID, at); err != nil {
+		t.Fatalf("MarkCloudTargetRun: %v", err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	target, ok := reopened.CloudTarget(saved.ID)
+	if !ok {
+		t.Fatalf("cloud target %s not found after reopen", saved.ID)
+	}
+	if target.Provider != model.CloudAliyun || target.Region != "cn-hangzhou" {
+		t.Fatalf("unexpected cloud target: %#v", target)
+	}
+	if target.LastRunAt == nil || !target.LastRunAt.Equal(at) {
+		t.Fatalf("LastRunAt = %v, want %v", target.LastRunAt, at)
+	}
+	if len(reopened.CloudTargets()) != 1 {
+		t.Errorf("CloudTargets = %#v", reopened.CloudTargets())
+	}
+	if found, err := reopened.DeleteCloudTarget(saved.ID); err != nil || !found {
+		t.Fatalf("DeleteCloudTarget = %v, %v", found, err)
+	}
+}
+
+func TestSettingsSyncCloudAssetsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"netbox_url":"https://netbox.example.com"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !s.Settings().SyncCloudAssets {
+		t.Error("missing sync_cloud_assets should default to true")
+	}
+
+	path = filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"sync_cloud_assets":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if s.Settings().SyncCloudAssets {
+		t.Error("explicit sync_cloud_assets=false must be preserved")
+	}
+}
+
 func TestLegacyIPDiscoveryMigration(t *testing.T) {
 	dir := t.TempDir()
 	legacy := `[{

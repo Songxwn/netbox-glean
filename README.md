@@ -9,6 +9,7 @@
 - 批量采集所有启用的目标
 - **批量扫描网段**：ICMP 探活后按协议探测，自动创建采集目标，可立即采集同步
 - **独立的 IP 采集**：读取 SNMP 设备的 ARP/NDP 表，或扫描 IPv4/IPv6 网段，单独写入 NetBox IPAM
+- **云资产采集**：从 vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎读取 VPC/子网网段、实例 IP 与弹性公网 IP，单独写入 NetBox IPAM
 - 查看每次采集的日志、硬件摘要、扫描结果和 NetBox 同步结果
 - 在线配置 NetBox 连接、默认 Site / Device Role / Platform 和同步策略
 
@@ -34,6 +35,13 @@
   - 读取 SNMP 设备 ARP/NDP 表，或对 IPv4/IPv6 网段做 ICMP 扫描
   - 按 MAC 匹配 NetBox 接口后写入 IPAM
   - 支持批量执行所有启用的 IP 采集目标
+- **云资产采集**
+  - 独立的云账号目标、页面、API 与定时任务，与设备 / IP 采集分离
+  - 支持 VMware vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎
+  - 采集 VPC / 子网 / 交换机网段，写入 NetBox IPAM Prefix
+  - 采集实例私网 IP 与弹性公网 IP，写入 NetBox IPAM IP Address
+  - 全部使用标准库手写签名与 HTTP 请求，不引入云厂商 SDK
+  - 支持自定义 Endpoint、区域、Project ID、附加网段与批量执行
 - **NetBox v1 / v2 Token 认证**
   - v1：`Authorization: Token <TOKEN>`
   - v2：`Authorization: Bearer nbt_<key>.<secret>`（NetBox 4.5+）
@@ -63,7 +71,8 @@
 2. 添加采集目标并填写对应协议凭据；也可以使用「批量扫描」自动发现并添加目标。
 3. 点击「采集」只预览结果；点击「同步」则采集后写入 NetBox。
 4. IP 地址采集在独立的「IP 采集」页面配置，不影响设备采集任务。
-5. 在「任务记录」中查看日志、扫描结果与同步明细。
+5. 云资产采集在独立的「云资产采集」页面配置，读取各云平台 VPC、子网、实例与弹性公网 IP。
+6. 在「任务记录」中查看日志、扫描结果与同步明细。
 
 ## 快速开始
 
@@ -138,6 +147,7 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - `dcim.manufacturer`、`dcim.site`、`dcim.devicetype`、`dcim.devicerole`、`dcim.platform`
 - `dcim.device`、`dcim.interface`、`dcim.inventoryitem`、`dcim.cable`
 - `ipam.ipaddress`
+- `ipam.prefix`（云资产采集写入 VPC/子网网段时需要）
 - `extras.customfield`（只读，用于检测字段是否存在）
 
 在 Web UI 的「设置 → NetBox 连接」中填入：
@@ -239,6 +249,8 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 | LLDP 邻居 | Cable（仅连接 NetBox 中已存在的设备与接口，已连接的接口会跳过） |
 | 硬件组件 | Inventory Item（按名称匹配，存在则更新） |
 | ARP/NDP 邻居、ICMP 存活地址（IP 采集） | IP Address（MAC 匹配到 NetBox 接口后自动分配） |
+| VPC / 子网 / 交换机网段（云资产） | IPAM Prefix（存在则跳过，描述中记录云平台、账号、VPC 与区域） |
+| 实例私网 IP、弹性公网 IP（云资产） | IP Address（MAC 能匹配到 NetBox 接口时分配，否则以未分配形式写入） |
 | 管理地址 | 可选写入 IP Address 并设为主 IP |
 | CPU / 内存 / BIOS / BMC 等 | 可选写入 `glean_*` 自定义字段 |
 
@@ -285,6 +297,37 @@ IP 地址采集与设备采集完全分开：在「IP 采集」页面新增独�
 - 从源码运行且系统禁用了非特权 ping socket 时，可执行 `sudo setcap cap_net_raw=+ep ./netbox-glean` 授予该能力。
 - 官方 Docker 镜像已通过 `setcap cap_net_raw=+ep` 给二进制授予 `CAP_NET_RAW`；以 `no-new-privileges` 运行时需要自行调整。
 - Windows 需要以管理员身份运行；否则请关闭 ICMP 扫描，仅使用 ARP/NDP。
+
+### 云资产采集
+
+云资产采集与设备采集、IP 采集完全分开：在「云资产采集」页面新增独立云账号目标。每个目标可选择采集：
+
+- **VPC / 子网 / 交换机网段**：写入 NetBox IPAM Prefix。
+- **实例私网 IP**：写入 NetBox IPAM IP Address。
+- **弹性公网 IP**：写入 NetBox IPAM IP Address，并标记为公网来源。
+
+支持以下云平台：
+
+| 云平台 | 必填字段 | 说明 |
+| --- | --- | --- |
+| VMware vCenter | Endpoint、用户名、密码 | 通过 `/api/session` 登录，读取虚拟机与 Guest Networking 接口 IP；vCenter API 不提供子网 CIDR，请在「附加网段」中手工填写 |
+| 阿里云（含国际站） | Region、AccessKey、SecretKey | 调用 ECS 与 VPC RPC API；区域端点使用 `*.aliyuncs.com`，国际站使用对应区域端点 |
+| 腾讯云 | Region、SecretId、SecretKey | 调用 CVM 与 VPC API（TC3-HMAC-SHA256） |
+| 华为云 | Region、Project ID、AccessKey、SecretKey | 调用 VPC / EIP 与 ECS API，Project ID 用于资源路径 |
+| AWS | Region、AccessKey、SecretKey | 调用 EC2 Query API（SigV4），读取 VPC、Subnet、Instance 与 EIP |
+| Google Cloud | Project ID、服务账号 JSON | 使用服务账号 JWT 换取 OAuth2 Token，读取 Compute 子网、实例与静态地址；需要 Compute Viewer 权限 |
+| 火山引擎 | Region、AccessKey、SecretKey | 调用 VPC / ECS API（V4 签名） |
+
+补充说明：
+
+- 所有云平台都支持自定义 `Endpoint`。阿里云、腾讯云、华为云还支持在 Endpoint 中使用 `{service}` 占位符，例如 `https://{service}.example.internal`。
+- 「附加网段」可填写任意数量、逗号分隔的 IPv4 / IPv6 CIDR，会与云 API 发现的结果合并去重；特别适合 vCenter 场景。
+- 云网段写入前会规范化并去重；单次同步最多写入 1000 个 Prefix 与 1000 个 IP。
+- 云 IP 默认以「未分配接口」形式写入。若采集到的 MAC 能在 NetBox 中匹配到接口，则会自动分配到该接口；已存在的 IP 不会被覆盖分配。
+- Prefix 描述会记录 `netbox-glean cloud <云平台> <目标名> <类型> <名称> vpc=<ID> <区域>`，便于回溯来源。
+- 云资产目标同样支持定时任务（「采集并同步」），并可通过「采集全部 / 同步全部」批量执行。
+- 可在「设置 → 同步选项」关闭「同步云资产到 NetBox IPAM」，仅查看采集结果。
+- 云资产采集只读取资源元数据，不会修改云上资源；也不会保存云 API 返回的临时 Token（Google OAuth Token 仅缓存在内存中）。
 
 ## 配置
 
@@ -333,6 +376,13 @@ Web UI 使用的接口也可以直接调用：
 | `DELETE` | `/api/ip-targets/{id}` | 删除 IP 采集目标 |
 | `POST` | `/api/ip-targets/{id}/collect` | 提交 IP 采集任务，`{"sync": true}` 表示采集并同步 IPAM |
 | `POST` | `/api/ip-collect` | 批量提交 IP 采集，`{"target_ids": [], "sync": true}`；不传 ID 表示所有启用目标 |
+| `GET` | `/api/cloud-targets` | 列出云资产采集目标（凭据脱敏） |
+| `POST` | `/api/cloud-targets` | 新增云资产采集目标 |
+| `GET` | `/api/cloud-targets/{id}` | 云资产采集目标详情 |
+| `PUT` | `/api/cloud-targets/{id}` | 更新云资产采集目标；SecretKey / 服务账号 JSON 留空表示不修改 |
+| `DELETE` | `/api/cloud-targets/{id}` | 删除云资产采集目标 |
+| `POST` | `/api/cloud-targets/{id}/collect` | 提交云资产采集任务，`{"sync": true}` 表示采集并同步 IPAM |
+| `POST` | `/api/cloud-collect` | 批量提交云资产采集，`{"target_ids": [], "sync": true}`；不传 ID 表示所有启用目标 |
 | `POST` | `/api/scan` | 批量扫描设备并自动添加目标 |
 | `GET` | `/api/jobs` | 任务列表，支持 `?limit=` |
 | `GET` | `/api/jobs/{id}` | 任务详情（含日志、采集结果或扫描结果） |
@@ -341,6 +391,8 @@ Web UI 使用的接口也可以直接调用：
 目标对象中与定时任务相关的字段：`schedule_enabled`、`schedule_interval_minutes`（分钟）、`last_run_at`（只读，由服务端维护）。任务对象新增 `trigger` 字段（`manual` / `schedule` / `scan`）。
 
 IP 采集目标对象的主要字段：`name`、`enabled`、`subnets`（逗号分隔的 IPv4 / IPv6 CIDR，IPv6 最宽 `/120`）、`address` / `port` / `snmp`（可选 SNMP 来源）、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
+
+云资产目标对象的主要字段：`name`、`enabled`、`provider`（`vcenter` / `aliyun` / `tencent` / `huawei` / `aws` / `gcp` / `volcengine`）、`endpoint`、`region`、`project`（GCP / 华为云）、`access_key`、`secret_key`、`credentials`（GCP 服务账号 JSON）、`insecure`（vCenter）、`collect_prefixes` / `collect_instances` / `collect_public_ips`、`extra_subnets`、`site`、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_cloud_assets`。采集结果中的 `cloud` 字段包含 `provider`、`vpcs`、`subnets`、`instances`、`public_ips`、`prefixes`、`addresses` 与 `warnings`。
 
 批量扫描请求示例：
 
@@ -411,7 +463,7 @@ git push origin v0.1.0
 
 ## 安全说明
 
-- **凭据以明文 JSON 保存**在数据目录（`settings.json`、`targets.json`、`ip_targets.json`），文件权限为 `0600`。请限制数据目录访问，或将其放在加密卷中。
+- **凭据以明文 JSON 保存**在数据目录（`settings.json`、`targets.json`、`ip_targets.json`、`cloud_targets.json`），文件权限为 `0600`。请限制数据目录访问，或将其放在加密卷中。
 - Web UI 默认不带登录。暴露到非可信网络前，务必设置 `NETBOX_GLEAN_WEB_USERNAME` / `NETBOX_GLEAN_WEB_PASSWORD`，并通过 HTTPS 反向代理访问。
 - 建议为 NetBox 使用最小权限专用 Token，并定期轮换。
 - SNMP v1/v2c Community 和 IPMI/Redfish 密码会以明文经过网络传输（Redfish 除外，使用 HTTPS）。请仅在受信管理网络中使用。
@@ -432,6 +484,10 @@ git push origin v0.1.0
 - 批量设备扫描先做 ICMP 探活，单次最多 256 个地址；未开启 ICMP 权限时无法使用批量扫描。
 - 只有 MAC 能在 NetBox 中找到对应接口时才会自动分配 IP；未匹配地址默认不写入 IPAM。
 - 单次同步最多处理 1000 个 IP，超大 ARP 表会被截断并产生警告。
+- 云资产采集受云 API 分页与限流影响；单次最多遍历 200 页、每页 100（GCP 为 500）条，超出部分不会写入。
+- vCenter 只提供 Guest IP，不提供 VPC/子网 CIDR；需要记录网段时请使用「附加网段」。
+- 云 API 凭据需要对应的只读权限（如告警只读、VPC 只读、ECS 只读、Compute Viewer 等）。权限不足时任务会明确返回云 API 错误。
+- 云资产同步不会删除云上已不存在的 NetBox Prefix/IP，避免误删人工维护的数据。
 - NetBox 写入为逐对象 REST 调用，大规模设备建议分批执行或提高超时。
 
 ## 目录结构
@@ -439,6 +495,7 @@ git push origin v0.1.0
 ```text
 cmd/netbox-glean/        程序入口
 internal/collect/        SNMP / IPMI / Redfish 采集器
+internal/cloud/          vCenter 与公有云 API 采集器（手写签名）
 internal/netbox/         NetBox REST 客户端与同步逻辑
 internal/model/          共享数据类型与默认值
 internal/store/          JSON 持久化
@@ -464,6 +521,9 @@ internal/config/         命令行与环境变量
 | 有邻居但没有创建 Cable | 远端设备需先存在于 NetBox；检查远端端口名是否与 NetBox 接口名一致，任务日志会列出跳过的原因 |
 | 批量扫描没有新增目标 | 确认网段路由、ICMP 权限、协议端口放行与凭据正确；任务详情会显示每台设备是跳过还是失败 |
 | IP 采集结果为空 | 确认 IP 采集目标至少配置了扫描网段或 SNMP 来源；ICMP 结果缺少 MAC 时需开启「写入未匹配接口的 IP」 |
+| 云资产采集返回 401/403 | 检查 AccessKey / SecretKey 是否有效、是否具备只读权限；GCP 检查服务账号 JSON 与 Project ID；vCenter 检查用户名密码与 Endpoint |
+| 云资产采集返回 400/404 | 检查 Region、Project ID、Endpoint 与云 API 版本是否匹配；任务日志会保留云 API 的错误码与消息 |
+| 云资产网段为空 | vCenter 需要在「附加网段」中手工填写 CIDR；公有云检查目标账号下是否真的有 VPC/子网，以及是否勾选了「VPC / 子网 / 交换机网段」 |
 
 日志会随任务保存在内存中，也可通过 `--debug` 查看进程级日志。
 

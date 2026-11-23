@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	settingsFile  = "settings.json"
-	targetsFile   = "targets.json"
-	ipTargetsFile = "ip_targets.json"
+	settingsFile     = "settings.json"
+	targetsFile      = "targets.json"
+	ipTargetsFile    = "ip_targets.json"
+	cloudTargetsFile = "cloud_targets.json"
 )
 
 // Store is a small thread-safe JSON backed store. Credentials are stored in
@@ -30,6 +31,7 @@ type Store struct {
 	settings        model.Settings
 	targets         []model.Target
 	ipTargets       []model.IPTarget
+	cloudTargets    []model.CloudTarget
 	settingsExisted bool
 }
 
@@ -46,6 +48,9 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	if err := s.loadIPTargets(); err != nil {
+		return nil, err
+	}
+	if err := s.loadCloudTargets(); err != nil {
 		return nil, err
 	}
 	legacy, err := s.loadTargets()
@@ -87,6 +92,11 @@ func (s *Store) loadSettings() error {
 		// also default to enabled for existing installations.
 		if _, ok := presence["sync_ip_addresses"]; !ok {
 			settings.SyncIPAddresses = true
+		}
+		// sync_cloud_assets was added together with cloud discovery and
+		// should default to enabled for existing installations.
+		if _, ok := presence["sync_cloud_assets"]; !ok {
+			settings.SyncCloudAssets = true
 		}
 	}
 	if settings.TokenVersion == "" {
@@ -462,6 +472,120 @@ func (s *Store) DeleteIPTarget(id string) (bool, error) {
 	}
 	s.ipTargets = out
 	return true, writeJSON(filepath.Join(s.dir, ipTargetsFile), s.ipTargets)
+}
+
+func (s *Store) loadCloudTargets() error {
+	data, err := os.ReadFile(filepath.Join(s.dir, cloudTargetsFile))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read cloud targets: %w", err)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(data, &s.cloudTargets); err != nil {
+		return fmt.Errorf("parse cloud_targets.json: %w", err)
+	}
+	for i := range s.cloudTargets {
+		model.NormalizeCloudTarget(&s.cloudTargets[i])
+	}
+	s.sortCloudTargetsLocked()
+	return nil
+}
+
+func (s *Store) sortCloudTargetsLocked() {
+	sort.Slice(s.cloudTargets, func(i, j int) bool {
+		return s.cloudTargets[i].Name < s.cloudTargets[j].Name
+	})
+}
+
+// CloudTargets returns a sorted copy of all cloud discovery targets.
+func (s *Store) CloudTargets() []model.CloudTarget {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.CloudTarget, len(s.cloudTargets))
+	copy(out, s.cloudTargets)
+	return out
+}
+
+// CloudTarget returns one cloud discovery target by ID.
+func (s *Store) CloudTarget(id string) (model.CloudTarget, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.cloudTargets {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return model.CloudTarget{}, false
+}
+
+// SaveCloudTarget creates or replaces a cloud discovery target.
+func (s *Store) SaveCloudTarget(t model.CloudTarget) (model.CloudTarget, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	if t.ID == "" {
+		t.ID = newID()
+		t.CreatedAt = now
+	}
+	t.UpdatedAt = now
+	found := false
+	for i := range s.cloudTargets {
+		if s.cloudTargets[i].ID == t.ID {
+			if t.CreatedAt.IsZero() {
+				t.CreatedAt = s.cloudTargets[i].CreatedAt
+			}
+			s.cloudTargets[i] = t
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.cloudTargets = append(s.cloudTargets, t)
+	}
+	s.sortCloudTargetsLocked()
+	if err := writeJSON(filepath.Join(s.dir, cloudTargetsFile), s.cloudTargets); err != nil {
+		return model.CloudTarget{}, err
+	}
+	return t, nil
+}
+
+// MarkCloudTargetRun records when a scheduled cloud run started.
+func (s *Store) MarkCloudTargetRun(id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at = at.UTC()
+	for i := range s.cloudTargets {
+		if s.cloudTargets[i].ID != id {
+			continue
+		}
+		s.cloudTargets[i].LastRunAt = &at
+		return writeJSON(filepath.Join(s.dir, cloudTargetsFile), s.cloudTargets)
+	}
+	return nil
+}
+
+// DeleteCloudTarget removes a cloud discovery target by ID.
+func (s *Store) DeleteCloudTarget(id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.cloudTargets[:0]
+	found := false
+	for _, t := range s.cloudTargets {
+		if t.ID == id {
+			found = true
+			continue
+		}
+		out = append(out, t)
+	}
+	if !found {
+		return false, nil
+	}
+	s.cloudTargets = out
+	return true, writeJSON(filepath.Join(s.dir, cloudTargetsFile), s.cloudTargets)
 }
 
 func writeJSON(path string, v any) error {

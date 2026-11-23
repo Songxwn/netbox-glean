@@ -26,6 +26,7 @@
       <button class="nav-item active" data-page="dashboard">概览</button>
       <button class="nav-item" data-page="targets">采集目标</button>
       <button class="nav-item" data-page="iptargets">IP 采集</button>
+      <button class="nav-item" data-page="cloudtargets">云资产采集</button>
       <button class="nav-item" data-page="jobs">任务记录</button>
       <button class="nav-item" data-page="settings">设置</button>
     </nav>
@@ -146,6 +147,31 @@
       </div>
     </section>
 
+    <section class="page hidden" id="page-cloudtargets">
+      <div class="toolbar">
+        <input class="input search" id="cloud-target-search" type="search" placeholder="搜索名称、云平台或区域">
+        <button class="btn" id="btn-cloud-collect-all">采集全部</button>
+        <button class="btn" id="btn-cloud-sync-all">同步全部</button>
+        <button class="btn primary" id="btn-add-cloud-target">新增云账号</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>名称 / 账号</th><th>云平台</th><th>区域</th><th>采集内容</th>
+                <th>定时</th><th>状态</th><th class="right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="cloud-targets-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="cloud-targets-empty">
+          还没有云资产采集目标。支持 VMware vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud 与火山引擎，可采集 VPC/子网网段、实例 IP 和弹性公网 IP 并写入 NetBox IPAM。
+        </div>
+      </div>
+    </section>
+
     <section class="page hidden" id="page-jobs">
       <div class="toolbar">
         <span class="muted" id="jobs-summary">任务记录保留在内存中，重启后清空。</span>
@@ -251,6 +277,10 @@
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-unmatched-ips">
               <span>写入未匹配 NetBox 接口的 IP（不分配）</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-sync-cloud-assets">
+              <span>同步云资产（VPC/子网网段与实例 IP）到 NetBox IPAM</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-custom-fields">
@@ -545,6 +575,117 @@
             <input class="input" id="it-schedule-interval" type="number" min="5" max="10080" step="1" value="60">
           </label>
         </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="btn" type="button" data-close-modal>取消</button>
+        <button class="btn primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal hidden" id="modal-cloudtarget">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="cloud-target-modal-title">新增云账号</h2>
+      <button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button>
+    </div>
+    <form id="cloud-target-form">
+      <div class="form-grid">
+        <label class="field">
+          <span>名称</span>
+          <input class="input" id="ct-name" autocomplete="off" placeholder="生产账号 · 阿里云">
+        </label>
+        <label class="field">
+          <span>云平台</span>
+          <select class="input" id="ct-provider">
+            <option value="vcenter">VMware vCenter</option>
+            <option value="aliyun">阿里云（含国际站）</option>
+            <option value="tencent">腾讯云</option>
+            <option value="huawei">华为云</option>
+            <option value="aws">AWS</option>
+            <option value="gcp">Google Cloud</option>
+            <option value="volcengine">火山引擎</option>
+          </select>
+        </label>
+        <label class="field checkbox-field span-2">
+          <input type="checkbox" id="ct-enabled" checked>
+          <span>启用该账号（参与“采集全部”与定时任务）</span>
+        </label>
+        <label class="field span-2">
+          <span id="ct-endpoint-label">API Endpoint（可选）</span>
+          <input class="input" id="ct-endpoint" placeholder="留空使用默认公网 Endpoint" autocomplete="off">
+          <small>vCenter 必填，例如 https://vcenter.example.com。公有云一般留空；阿里云、腾讯云、华为云可用 {service} 占位符指定自定义网关。</small>
+        </label>
+        <label class="field cloud-region">
+          <span>区域（Region）</span>
+          <input class="input" id="ct-region" placeholder="cn-hangzhou / ap-southeast-1" autocomplete="off">
+        </label>
+        <label class="field cloud-project hidden">
+          <span id="ct-project-label">Project ID</span>
+          <input class="input" id="ct-project" autocomplete="off">
+        </label>
+        <label class="field cloud-access">
+          <span id="ct-access-label">AccessKey</span>
+          <input class="input" id="ct-access" autocomplete="off" placeholder="留空表示不修改">
+        </label>
+        <label class="field cloud-secret">
+          <span id="ct-secret-label">SecretKey</span>
+          <input class="input" id="ct-secret" type="password" placeholder="留空表示不修改" autocomplete="new-password">
+        </label>
+        <label class="field span-2 cloud-credentials hidden">
+          <span>服务账号 JSON（Google Cloud）</span>
+          <textarea class="input" id="ct-credentials" rows="5" placeholder="粘贴服务账号 JSON，留空表示不修改已保存的凭据" autocomplete="off"></textarea>
+          <small>需要具备 Compute Viewer 权限。私钥只保存在本机 data 目录（0600）。</small>
+        </label>
+        <label class="field checkbox-field span-2 cloud-insecure hidden">
+          <input type="checkbox" id="ct-insecure">
+          <span>跳过 vCenter TLS 证书校验</span>
+        </label>
+      </div>
+
+      <fieldset class="schedule-box">
+        <legend>采集内容</legend>
+        <div class="form-grid checks">
+          <label class="field checkbox-field">
+            <input type="checkbox" id="ct-collect-prefixes" checked>
+            <span>VPC / 子网 / 交换机网段</span>
+          </label>
+          <label class="field checkbox-field">
+            <input type="checkbox" id="ct-collect-instances" checked>
+            <span>实例 IP</span>
+          </label>
+          <label class="field checkbox-field">
+            <input type="checkbox" id="ct-collect-public" checked>
+            <span>弹性公网 IP</span>
+          </label>
+          <label class="field span-2">
+            <span>附加网段（可选，CIDR 逗号分隔）</span>
+            <input class="input" id="ct-extra-subnets" placeholder="172.16.0.0/16, 2001:db8::/64" autocomplete="off">
+            <small>vCenter API 不提供子网 CIDR，请在此手工填写；其他平台可用于补充未自动发现的网段。</small>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="schedule-box">
+        <legend>NetBox 归属与定时</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span>Site slug 覆盖（可选）</span>
+            <input class="input" id="ct-site" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>定时间隔（分钟）</span>
+            <input class="input" id="ct-schedule-interval" type="number" min="5" max="10080" step="1" value="60">
+          </label>
+          <label class="field checkbox-field span-2">
+            <input type="checkbox" id="ct-schedule-enabled">
+            <span>启用定时采集并同步</span>
+          </label>
+        </div>
+        <p class="muted">到点后自动采集并写入 NetBox IPAM；若该目标已有排队或运行中的任务，本轮跳过。首次启用后会立即执行一次。</p>
       </fieldset>
 
       <div class="form-actions">

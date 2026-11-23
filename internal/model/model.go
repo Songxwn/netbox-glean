@@ -40,21 +40,24 @@ type Settings struct {
 	NetboxTokenSet bool   `json:"netbox_token_set,omitempty"`
 	// TokenVersion accepts "auto", "1" or "2". Auto uses NetBox v2 bearer
 	// tokens (nbt_ prefix) when detected, otherwise legacy v1 Token auth.
-	TokenVersion    string `json:"token_version"`
-	NetboxInsecure  bool   `json:"netbox_insecure"`
-	Site            string `json:"site"`
-	SiteName        string `json:"site_name,omitempty"`
-	DeviceRole      string `json:"device_role"`
-	Platform        string `json:"platform,omitempty"`
-	UHeight         int    `json:"u_height"`
-	SyncInterfaces  bool   `json:"sync_interfaces"`
-	SyncInventory   bool   `json:"sync_inventory"`
-	SyncCables      bool   `json:"sync_cables"`
+	TokenVersion   string `json:"token_version"`
+	NetboxInsecure bool   `json:"netbox_insecure"`
+	Site           string `json:"site"`
+	SiteName       string `json:"site_name,omitempty"`
+	DeviceRole     string `json:"device_role"`
+	Platform       string `json:"platform,omitempty"`
+	UHeight        int    `json:"u_height"`
+	SyncInterfaces bool   `json:"sync_interfaces"`
+	SyncInventory  bool   `json:"sync_inventory"`
+	SyncCables     bool   `json:"sync_cables"`
 	// SyncIPAddresses writes IPs discovered through ARP/NDP tables and ICMP
 	// sweeps into NetBox IPAM. SyncUnmatchedIPs also writes addresses that
 	// cannot be attached to a known NetBox interface.
-	SyncIPAddresses  bool   `json:"sync_ip_addresses"`
-	SyncUnmatchedIPs bool   `json:"sync_unmatched_ips"`
+	SyncIPAddresses  bool `json:"sync_ip_addresses"`
+	SyncUnmatchedIPs bool `json:"sync_unmatched_ips"`
+	// SyncCloudAssets writes cloud VPC/subnet prefixes and instance/elastic
+	// IP addresses into NetBox IPAM.
+	SyncCloudAssets  bool   `json:"sync_cloud_assets"`
 	PruneInterfaces  bool   `json:"prune_interfaces"`
 	CustomFields     bool   `json:"custom_fields"`
 	AssignPrimaryIP  bool   `json:"assign_primary_ip"`
@@ -71,6 +74,7 @@ func DefaultSettings() Settings {
 		SyncInventory:    true,
 		SyncCables:       true,
 		SyncIPAddresses:  true,
+		SyncCloudAssets:  true,
 		CustomFields:     true,
 		PrimaryInterface: "mgmt0",
 		DeviceRole:       "server",
@@ -344,6 +348,8 @@ type SyncResult struct {
 	IPCreated         int      `json:"ip_created"`
 	IPAssigned        int      `json:"ip_assigned"`
 	IPSkipped         int      `json:"ip_skipped"`
+	PrefixCreated     int      `json:"prefix_created"`
+	PrefixSkipped     int      `json:"prefix_skipped"`
 	IPAddress         string   `json:"ip_address,omitempty"`
 	Actions           []string `json:"actions,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`

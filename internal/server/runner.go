@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Songxwn/netbox-glean/internal/cloud"
 	"github.com/Songxwn/netbox-glean/internal/collect"
 	"github.com/Songxwn/netbox-glean/internal/jobs"
 	"github.com/Songxwn/netbox-glean/internal/model"
@@ -49,6 +50,43 @@ func (s *Server) startIPJobWith(target model.IPTarget, sync bool, trigger string
 			return data, nil, nil
 		}
 		result, err := netbox.SyncIPs(ctx, settings, target.Name, data.IPAddresses, logf)
+		if err != nil {
+			return data, nil, err
+		}
+		return data, result, nil
+	})
+}
+
+// startCloudJob starts a manually triggered cloud asset discovery job.
+func (s *Server) startCloudJob(target model.CloudTarget, sync bool) string {
+	return s.startCloudJobWith(target, sync, jobs.TriggerManual)
+}
+
+// startCloudJobWith starts a cloud job and records what triggered it.
+func (s *Server) startCloudJobWith(target model.CloudTarget, sync bool, trigger string) string {
+	mode := model.ModeCollect
+	if sync {
+		mode = model.ModeSync
+	}
+	settings := s.store.Settings()
+	meta := jobs.Meta{ID: target.ID, Name: target.Name, Protocol: model.ProtocolCloud}
+	return s.jobs.StartCloud(meta, mode, trigger, func(ctx context.Context, logf model.LogFunc) (*model.CloudResult, *model.SyncResult, error) {
+		if trigger == jobs.TriggerSchedule {
+			logf("定时任务: 每 %d 分钟", int(target.ScheduleInterval().Minutes()))
+		}
+		logf("云资产目标: %s (%s)", target.Name, model.CloudProviderLabel(target.Provider))
+		if target.Region != "" {
+			logf("区域: %s", target.Region)
+		}
+		data, err := cloud.Run(ctx, target, logf)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !sync {
+			logf("预览模式：未写入 NetBox")
+			return data, nil, nil
+		}
+		result, err := netbox.SyncCloud(ctx, settings, target, data, logf)
 		if err != nil {
 			return data, nil, err
 		}

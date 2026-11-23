@@ -64,4 +64,18 @@ func (s *Server) runDueTargets() {
 		jobID := s.startIPJobWith(target, true, jobs.TriggerSchedule)
 		s.logger.Info("scheduled IP job started", "target", target.Name, "job", jobID)
 	}
+	for _, target := range s.store.CloudTargets() {
+		if !target.ScheduleDue(now) {
+			continue
+		}
+		if s.jobs.ActiveFor(target.ID) {
+			continue
+		}
+		if err := s.store.MarkCloudTargetRun(target.ID, now); err != nil {
+			s.logger.Error("record scheduled cloud run", "target", target.Name, "error", err)
+			continue
+		}
+		jobID := s.startCloudJobWith(target, true, jobs.TriggerSchedule)
+		s.logger.Info("scheduled cloud job started", "target", target.Name, "job", jobID)
+	}
 }

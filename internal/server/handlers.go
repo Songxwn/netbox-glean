@@ -178,16 +178,25 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 			ipEnabled++
 		}
 	}
+	cloudTargets := s.store.CloudTargets()
+	cloudEnabled := 0
+	for _, t := range cloudTargets {
+		if t.Enabled {
+			cloudEnabled++
+		}
+	}
 	settings := s.store.Settings()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"targets":            len(targets),
-		"targets_enabled":    enabled,
-		"ip_targets":         len(ipTargets),
-		"ip_targets_enabled": ipEnabled,
-		"by_protocol":        byProtocol,
-		"jobs":               s.jobs.Stats(),
-		"netbox_configured":  settings.NetboxURL != "",
-		"site":               settings.Site,
+		"targets":               len(targets),
+		"targets_enabled":       enabled,
+		"ip_targets":            len(ipTargets),
+		"ip_targets_enabled":    ipEnabled,
+		"cloud_targets":         len(cloudTargets),
+		"cloud_targets_enabled": cloudEnabled,
+		"by_protocol":           byProtocol,
+		"jobs":                  s.jobs.Stats(),
+		"netbox_configured":     settings.NetboxURL != "",
+		"site":                  settings.Site,
 	})
 }
 
@@ -483,6 +492,152 @@ func (s *Server) handleCollectIPBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"count": len(out), "jobs": out})
 }
 
+func (s *Server) handleListCloudTargets(w http.ResponseWriter, _ *http.Request) {
+	targets := s.store.CloudTargets()
+	out := make([]model.CloudTarget, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, sanitizeCloudTarget(t))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleGetCloudTarget(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.store.CloudTarget(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "云资产采集目标不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeCloudTarget(target))
+}
+
+func (s *Server) handleCreateCloudTarget(w http.ResponseWriter, r *http.Request) {
+	var target model.CloudTarget
+	if !readJSON(w, r, &target) {
+		return
+	}
+	target.ID = ""
+	target.CreatedAt = time.Time{}
+	target.UpdatedAt = time.Time{}
+	target.LastRunAt = nil
+	model.NormalizeCloudTarget(&target)
+	if err := model.ValidateCloudTarget(target); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	saved, err := s.store.SaveCloudTarget(target)
+	if err != nil {
+		s.logger.Error("save cloud target", "error", err)
+		writeError(w, http.StatusInternalServerError, "保存云资产采集目标失败")
+		return
+	}
+	writeJSON(w, http.StatusCreated, sanitizeCloudTarget(saved))
+}
+
+func (s *Server) handleUpdateCloudTarget(w http.ResponseWriter, r *http.Request) {
+	existing, ok := s.store.CloudTarget(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "云资产采集目标不存在")
+		return
+	}
+	var target model.CloudTarget
+	if !readJSON(w, r, &target) {
+		return
+	}
+	target.ID = existing.ID
+	target.CreatedAt = existing.CreatedAt
+	target.LastRunAt = existing.LastRunAt
+	mergeCloudTargetSecrets(&target, existing)
+	model.NormalizeCloudTarget(&target)
+	if err := model.ValidateCloudTarget(target); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	saved, err := s.store.SaveCloudTarget(target)
+	if err != nil {
+		s.logger.Error("save cloud target", "error", err)
+		writeError(w, http.StatusInternalServerError, "保存云资产采集目标失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, sanitizeCloudTarget(saved))
+}
+
+func (s *Server) handleDeleteCloudTarget(w http.ResponseWriter, r *http.Request) {
+	found, err := s.store.DeleteCloudTarget(r.PathValue("id"))
+	if err != nil {
+		s.logger.Error("delete cloud target", "error", err)
+		writeError(w, http.StatusInternalServerError, "删除云资产采集目标失败")
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "云资产采集目标不存在")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleCollectCloudTarget(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.store.CloudTarget(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "云资产采集目标不存在")
+		return
+	}
+	var req struct {
+		Sync bool `json:"sync"`
+	}
+	if !readOptionalJSON(w, r, &req) {
+		return
+	}
+	jobID := s.startCloudJob(target, req.Sync)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"job_id":      jobID,
+		"target_id":   target.ID,
+		"target_name": target.Name,
+		"sync":        req.Sync,
+	})
+}
+
+func (s *Server) handleCollectCloudBatch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TargetIDs []string `json:"target_ids"`
+		Sync      bool     `json:"sync"`
+	}
+	if !readOptionalJSON(w, r, &req) {
+		return
+	}
+	var targets []model.CloudTarget
+	if len(req.TargetIDs) > 0 {
+		for _, id := range req.TargetIDs {
+			if target, ok := s.store.CloudTarget(id); ok {
+				targets = append(targets, target)
+			}
+		}
+	} else {
+		for _, target := range s.store.CloudTargets() {
+			if target.Enabled {
+				targets = append(targets, target)
+			}
+		}
+	}
+	if len(targets) == 0 {
+		writeError(w, http.StatusBadRequest, "没有可执行的云资产采集目标")
+		return
+	}
+	type started struct {
+		JobID      string `json:"job_id"`
+		TargetID   string `json:"target_id"`
+		TargetName string `json:"target_name"`
+	}
+	out := make([]started, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, started{
+			JobID:      s.startCloudJob(target, req.Sync),
+			TargetID:   target.ID,
+			TargetName: target.Name,
+		})
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"count": len(out), "jobs": out})
+}
+
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	var req model.ScanRequest
 	if !readJSON(w, r, &req) {
@@ -568,5 +723,23 @@ func mergeIPTargetSecrets(target *model.IPTarget, existing model.IPTarget) {
 	}
 	if target.SNMP.V3PrivPassword == "" {
 		target.SNMP.V3PrivPassword = existing.SNMP.V3PrivPassword
+	}
+}
+
+func sanitizeCloudTarget(t model.CloudTarget) model.CloudTarget {
+	t.SecretKey = ""
+	t.Credentials = ""
+	return t
+}
+
+func mergeCloudTargetSecrets(target *model.CloudTarget, existing model.CloudTarget) {
+	if target.AccessKey == "" {
+		target.AccessKey = existing.AccessKey
+	}
+	if target.SecretKey == "" {
+		target.SecretKey = existing.SecretKey
+	}
+	if target.Credentials == "" {
+		target.Credentials = existing.Credentials
 	}
 }
