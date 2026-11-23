@@ -36,6 +36,7 @@ type Settings struct {
 	UHeight         int    `json:"u_height"`
 	SyncInterfaces  bool   `json:"sync_interfaces"`
 	SyncInventory   bool   `json:"sync_inventory"`
+	SyncCables      bool   `json:"sync_cables"`
 	PruneInterfaces bool   `json:"prune_interfaces"`
 	CustomFields    bool   `json:"custom_fields"`
 	AssignPrimaryIP bool   `json:"assign_primary_ip"`
@@ -50,6 +51,7 @@ func DefaultSettings() Settings {
 		UHeight:          1,
 		SyncInterfaces:   true,
 		SyncInventory:    true,
+		SyncCables:       true,
 		CustomFields:     true,
 		PrimaryInterface: "mgmt0",
 		DeviceRole:       "server",
@@ -135,6 +137,18 @@ type Interface struct {
 	OperUp      bool   `json:"oper_up"`
 }
 
+// Neighbor is a link layer neighbor learned through LLDP. It is used to
+// create cables automatically in NetBox.
+type Neighbor struct {
+	LocalInterface  string `json:"local_interface"`
+	LocalPortID     string `json:"local_port_id,omitempty"`
+	RemoteSystem    string `json:"remote_system,omitempty"`
+	RemotePort      string `json:"remote_port,omitempty"`
+	RemotePortDesc  string `json:"remote_port_desc,omitempty"`
+	RemoteChassisID string `json:"remote_chassis_id,omitempty"`
+	RemoteSysDesc   string `json:"remote_sys_desc,omitempty"`
+}
+
 // Component is a hardware component (inventory item in NetBox).
 type Component struct {
 	Name         string `json:"name"`
@@ -156,6 +170,7 @@ type Collected struct {
 	Identity    Identity          `json:"identity"`
 	Interfaces  []Interface       `json:"interfaces,omitempty"`
 	Components  []Component       `json:"components,omitempty"`
+	Neighbors   []Neighbor        `json:"neighbors,omitempty"`
 	Extra       map[string]string `json:"extra,omitempty"`
 	Warnings    []string          `json:"warnings,omitempty"`
 }
@@ -170,6 +185,8 @@ type SyncResult struct {
 	InterfacesUpdated int      `json:"interfaces_updated"`
 	InventoryCreated  int      `json:"inventory_created"`
 	InventoryUpdated  int      `json:"inventory_updated"`
+	CablesCreated     int      `json:"cables_created"`
+	CablesSkipped     int      `json:"cables_skipped"`
 	IPAddress         string   `json:"ip_address,omitempty"`
 	Actions           []string `json:"actions,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`

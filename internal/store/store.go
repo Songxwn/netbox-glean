@@ -65,6 +65,14 @@ func (s *Store) loadSettings() error {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return fmt.Errorf("parse settings.json: %w", err)
 	}
+	// sync_cables was added after the first release. Existing installations
+	// have no key for it, which would otherwise unmarshal to false.
+	var presence map[string]json.RawMessage
+	if err := json.Unmarshal(data, &presence); err == nil {
+		if _, ok := presence["sync_cables"]; !ok {
+			settings.SyncCables = true
+		}
+	}
 	if settings.TokenVersion == "" {
 		settings.TokenVersion = "auto"
 	}

@@ -127,6 +127,16 @@ func Sync(ctx context.Context, settings model.Settings, target model.Target, dat
 		}
 	}
 
+	if settings.SyncCables && len(data.Neighbors) > 0 {
+		createdCount, skippedCount, warnings := client.syncCables(ctx, deviceID, deviceName, siteSlug, data.Neighbors, logf)
+		res.CablesCreated = createdCount
+		res.CablesSkipped = skippedCount
+		res.Warnings = append(res.Warnings, warnings...)
+		if createdCount+skippedCount > 0 {
+			res.Add("LLDP 自动连线: 新建 %d, 跳过 %d", createdCount, skippedCount)
+		}
+	}
+
 	if settings.SyncInventory && len(data.Components) > 0 {
 		createdCount, updatedCount, warnings := client.syncInventory(ctx, deviceID, data.Components, logf)
 		res.InventoryCreated = createdCount

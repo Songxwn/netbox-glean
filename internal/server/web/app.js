@@ -281,6 +281,7 @@ function fillSettings(settings) {
   setVal('set-description', settings.description);
   setChecked('set-sync-interfaces', settings.sync_interfaces);
   setChecked('set-sync-inventory', settings.sync_inventory);
+  setChecked('set-sync-cables', settings.sync_cables);
   setChecked('set-prune-interfaces', settings.prune_interfaces);
   setChecked('set-custom-fields', settings.custom_fields);
   setChecked('set-assign-ip', settings.assign_primary_ip);
@@ -433,6 +434,7 @@ async function saveSettings(event) {
     u_height: Number.parseInt(val('set-u-height'), 10) || 1,
     sync_interfaces: checked('set-sync-interfaces'),
     sync_inventory: checked('set-sync-inventory'),
+    sync_cables: checked('set-sync-cables'),
     prune_interfaces: checked('set-prune-interfaces'),
     custom_fields: checked('set-custom-fields'),
     assign_primary_ip: checked('set-assign-ip'),
@@ -524,6 +526,21 @@ function renderJobDetail(job) {
       <dt>接口 / 组件</dt><dd>${(result.interfaces || []).length} / ${(result.components || []).length}</dd>
     </dl>` : '<p class="muted">尚无采集结果。</p>';
 
+  const neighborList = result && Array.isArray(result.neighbors) ? result.neighbors : [];
+  const neighborBlock = neighborList.length ? `
+    <h3 class="section-title">LLDP 邻居</h3>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>本端接口</th><th>远端设备</th><th>远端端口</th><th>端口描述</th></tr></thead>
+        <tbody>${neighborList.map((n) => `<tr>
+          <td class="mono">${esc(n.local_interface || '—')}</td>
+          <td>${esc(n.remote_system || '—')}</td>
+          <td class="mono">${esc(n.remote_port || '—')}</td>
+          <td class="muted">${esc(n.remote_port_desc || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>` : '';
+
   const warnings = [];
   if (result && Array.isArray(result.warnings)) warnings.push(...result.warnings);
   if (sync && Array.isArray(sync.warnings)) warnings.push(...sync.warnings);
@@ -536,6 +553,7 @@ function renderJobDetail(job) {
     <dl class="kv">
       <dt>设备</dt><dd>${esc(sync.device_name || '—')} (#${sync.device_id}) ${sync.device_url ? `· <a href="${esc(sync.device_url)}" target="_blank" rel="noreferrer">打开</a>` : ''}</dd>
       <dt>接口</dt><dd>新建 ${sync.interfaces_created} / 更新 ${sync.interfaces_updated}</dd>
+      <dt>LLDP 连线</dt><dd>新建 ${sync.cables_created || 0} / 跳过 ${sync.cables_skipped || 0}</dd>
       <dt>硬件清单</dt><dd>新建 ${sync.inventory_created} / 更新 ${sync.inventory_updated}</dd>
       ${sync.ip_address ? `<dt>主 IP</dt><dd class="mono">${esc(sync.ip_address)}</dd>` : ''}
     </dl>
@@ -551,6 +569,7 @@ function renderJobDetail(job) {
     ${kv}
     ${syncBlock}
     ${identityBlock}
+    ${neighborBlock}
     ${warningBlock}
     <h3 class="section-title">任务日志</h3>
     <pre class="log-box mono">${esc(log)}</pre>

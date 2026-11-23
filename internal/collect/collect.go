@@ -79,6 +79,31 @@ func finish(target model.Target, c *model.Collected) {
 	}
 	c.Interfaces = ifaces
 
+	neighbors := make([]model.Neighbor, 0, len(c.Neighbors))
+	linkSeen := map[string]bool{}
+	for _, neighbor := range c.Neighbors {
+		neighbor.LocalInterface = strings.TrimSpace(neighbor.LocalInterface)
+		neighbor.RemoteSystem = strings.TrimSpace(neighbor.RemoteSystem)
+		neighbor.RemotePort = strings.TrimSpace(neighbor.RemotePort)
+		neighbor.RemotePortDesc = strings.TrimSpace(neighbor.RemotePortDesc)
+		if neighbor.LocalInterface == "" {
+			continue
+		}
+		if neighbor.RemoteSystem == "" && neighbor.RemotePort == "" && neighbor.RemotePortDesc == "" {
+			continue
+		}
+		key := strings.ToLower(neighbor.LocalInterface + "|" + neighbor.RemoteSystem + "|" + model.First(neighbor.RemotePort, neighbor.RemotePortDesc))
+		if linkSeen[key] {
+			continue
+		}
+		linkSeen[key] = true
+		neighbors = append(neighbors, neighbor)
+		if len(neighbors) >= lldpMaxNeighbors {
+			break
+		}
+	}
+	c.Neighbors = neighbors
+
 	components := make([]model.Component, 0, len(c.Components))
 	compSeen := map[string]int{}
 	for _, comp := range c.Components {

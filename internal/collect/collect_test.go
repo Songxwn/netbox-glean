@@ -50,3 +50,23 @@ func TestFinishNormalizes(t *testing.T) {
 func TestFinishHandlesNil(t *testing.T) {
 	finish(model.Target{}, nil)
 }
+
+func TestFinishNormalizesNeighbors(t *testing.T) {
+	data := &model.Collected{
+		Interfaces: []model.Interface{{Name: "eth0"}},
+		Neighbors: []model.Neighbor{
+			{LocalInterface: " eth0 ", RemoteSystem: " core-1 ", RemotePort: "Gi0/1"},
+			{LocalInterface: "ETH0", RemoteSystem: "CORE-1", RemotePort: "gi0/1"},
+			{LocalInterface: "", RemoteSystem: "core-2", RemotePort: "Gi0/2"},
+			{LocalInterface: "eth1"},
+		},
+	}
+	finish(model.Target{Protocol: model.ProtocolSNMP, Name: "leaf-1"}, data)
+	if len(data.Neighbors) != 1 {
+		t.Fatalf("neighbors = %d, want 1: %#v", len(data.Neighbors), data.Neighbors)
+	}
+	got := data.Neighbors[0]
+	if got.LocalInterface != "eth0" || got.RemoteSystem != "core-1" || got.RemotePort != "Gi0/1" {
+		t.Errorf("unexpected neighbor: %#v", got)
+	}
+}
