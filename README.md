@@ -104,6 +104,8 @@ docker compose up -d
 docker compose up -d --build
 ```
 
+Compose 默认把容器的 `8080` 映射到宿主机 `8788`，启动后访问 <http://localhost:8788>。
+
 > 采集局域网设备时，容器需要能访问目标网段。Linux 下可按需使用 `network_mode: host`。
 > 数据卷中保存明文凭据，请限制宿主机访问权限。
 
@@ -296,11 +298,13 @@ git push origin v0.1.0
 
 发布产物包含：
 
-- `linux/amd64`、`linux/arm64`、`linux/armv7`、`linux/386`、`linux/ppc64le`、`linux/s390x`、`linux/riscv64`
+- `linux/amd64`、`linux/arm64`
 - `darwin/amd64`、`darwin/arm64`
-- `windows/amd64`、`windows/arm64`、`windows/386`
+- `windows/amd64`、`windows/arm64`
 - `freebsd/amd64`、`freebsd/arm64`
 - `checksums.txt`
+
+所有平台仅提供 `amd64` 与 `arm64` 两种架构。
 
 所有构建均为 `CGO_ENABLED=0` 静态二进制（Windows 使用系统 API，无需额外运行库）。
 

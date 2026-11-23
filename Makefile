@@ -41,16 +41,15 @@ clean:
 dist: tidy
 	@mkdir -p dist
 	@for target in \
-	  linux/amd64 linux/arm64 linux/arm linux/386 linux/ppc64le linux/s390x linux/riscv64 \
+	  linux/amd64 linux/arm64 \
 	  darwin/amd64 darwin/arm64 \
-	  windows/amd64 windows/arm64 windows/386 \
+	  windows/amd64 windows/arm64 \
 	  freebsd/amd64 freebsd/arm64; do \
 	  os=$${target%/*}; arch=$${target#*/}; \
 	  ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
-	  arm=""; suffix=""; [ "$$arch" = "arm" ] && { arm="7"; suffix="v7"; }; \
 	  echo "building $$os/$$arch"; \
-	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch GOARM=$$arm go build -trimpath -ldflags "$(LDFLAGS)" \
-	    -o "dist/$(BINARY)_$(VERSION)_$${os}_$${arch}$${suffix}$${ext}" $(CMD) || exit 1; \
+	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" \
+	    -o "dist/$(BINARY)_$(VERSION)_$${os}_$${arch}$${ext}" $(CMD) || exit 1; \
 	done
 
 docker:
