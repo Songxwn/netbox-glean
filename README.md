@@ -350,6 +350,8 @@ internal/config/         命令行与环境变量
 | NetBox 返回 400 | 查看任务日志中的 API 错误；常见原因是 Site/Role slug 不存在、Device Type 冲突或自定义字段类型不匹配 |
 | NetBox 401/403 | 检查 Token 版本（v1/v2）、Token 权限和是否过期 |
 | 设备被创建到错误 Site | 检查目标级 Site 覆盖与默认 Site 设置 |
+| LLDP 邻居为空 | 确认设备已启用 LLDP（`lldpAdminStatus` 为 `enabled`）且对端也在发送 LLDP |
+| 有邻居但没有创建 Cable | 远端设备需先存在于 NetBox；检查远端端口名是否与 NetBox 接口名一致，任务日志会列出跳过的原因 |
 
 日志会随任务保存在内存中，也可通过 `--debug` 查看进程级日志。
 
