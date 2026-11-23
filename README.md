@@ -8,7 +8,7 @@
 - 一键采集预览，或采集并同步到 NetBox
 - 批量采集所有启用的目标
 - **批量扫描网段**：ICMP 探活后按协议探测，自动创建采集目标，可立即采集同步
-- **独立的 IP 采集**：读取 SNMP 设备的 ARP/NDP 表，或扫描 IPv4 网段，单独写入 NetBox IPAM
+- **独立的 IP 采集**：读取 SNMP 设备的 ARP/NDP 表，或扫描 IPv4/IPv6 网段，单独写入 NetBox IPAM
 - 查看每次采集的日志、硬件摘要、扫描结果和 NetBox 同步结果
 - 在线配置 NetBox 连接、默认 Site / Device Role / Platform 和同步策略
 
@@ -31,7 +31,7 @@
   - 可选写入已存在的 `glean_*` 自定义字段
 - **独立的 IP 采集**
   - 独立的 IP 采集目标、页面、API 与定时任务，与设备采集分离
-  - 读取 SNMP 设备 ARP/NDP 表，或对 IPv4 网段做 ICMP 扫描
+  - 读取 SNMP 设备 ARP/NDP 表，或对 IPv4/IPv6 网段做 ICMP 扫描
   - 按 MAC 匹配 NetBox 接口后写入 IPAM
   - 支持批量执行所有启用的 IP 采集目标
 - **NetBox v1 / v2 Token 认证**
@@ -264,9 +264,9 @@ IP 地址采集与设备采集完全分开：在「IP 采集」页面新增独�
 1. **SNMP 来源（可选）**：填写一台三层设备的地址与 SNMP 凭据，读取它的地址转换表：
    - `ipNetToMediaTable`：传统 IPv4 ARP 表
    - `ipNetToPhysicalTable`：IPv4 / IPv6 邻居表（NDP）
-2. **扫描网段（可选）**：逗号分隔的 IPv4 CIDR，例如 `10.0.0.0/24, 10.0.1.0/24`。工具会向网段内每个可用地址发送 ICMP Echo：
-   - 单次最多扫描 1024 个地址，自动跳过网络地址和广播地址。
-   - 仅支持 IPv4；IPv6 邻居仍可通过 `ipNetToPhysicalTable` 读取。
+2. **扫描网段（可选）**：逗号分隔的 IPv4 / IPv6 CIDR，例如 `10.0.0.0/24, 2001:db8::/120`。工具会向网段内每个可用地址发送 ICMP Echo（IPv6 使用 ICMPv6）：
+   - 单次最多扫描 1024 个地址，自动跳过 IPv4 网络地址和广播地址。
+   - IPv6 最多支持 `/120`（256 个地址）及更小的网段；典型 `/64` 网段无法逐个枚举，请改用 SNMP 来源读取 NDP 表。
    - 扫描结果会与 ARP/NDP 结果合并，同一地址优先保留 MAC 和接口信息。
 
 写入 NetBox 的行为：
@@ -281,7 +281,7 @@ IP 地址采集与设备采集完全分开：在「IP 采集」页面新增独�
 
 权限说明：
 
-- Linux / macOS 会优先使用非特权 ping socket，失败时回退到原始 ICMP socket。
+- Linux / macOS 会优先使用非特权 ping socket（IPv4 与 IPv6 各自尝试），失败时回退到原始 ICMP socket。
 - 从源码运行且系统禁用了非特权 ping socket 时，可执行 `sudo setcap cap_net_raw=+ep ./netbox-glean` 授予该能力。
 - 官方 Docker 镜像已通过 `setcap cap_net_raw=+ep` 给二进制授予 `CAP_NET_RAW`；以 `no-new-privileges` 运行时需要自行调整。
 - Windows 需要以管理员身份运行；否则请关闭 ICMP 扫描，仅使用 ARP/NDP。
@@ -340,7 +340,7 @@ Web UI 使用的接口也可以直接调用：
 
 目标对象中与定时任务相关的字段：`schedule_enabled`、`schedule_interval_minutes`（分钟）、`last_run_at`（只读，由服务端维护）。任务对象新增 `trigger` 字段（`manual` / `schedule` / `scan`）。
 
-IP 采集目标对象的主要字段：`name`、`enabled`、`subnets`（逗号分隔的 IPv4 CIDR）、`address` / `port` / `snmp`（可选 SNMP 来源）、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
+IP 采集目标对象的主要字段：`name`、`enabled`、`subnets`（逗号分隔的 IPv4 / IPv6 CIDR，IPv6 最宽 `/120`）、`address` / `port` / `snmp`（可选 SNMP 来源）、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
 
 批量扫描请求示例：
 
@@ -428,7 +428,7 @@ git push origin v0.1.0
 - 硬件清单按名称匹配更新，不做删除；重命名组件会在 NetBox 中新增一条记录。
 - LLDP 只能发现直连邻居；远端设备未录入 NetBox、或接口命名与 LLDP 上报不一致时无法自动连线。
 - 每个接口只保留一条 Cable，已有连线不会被自动改写。
-- IP 采集是独立目标；ICMP 扫描只支持 IPv4，单次最多 1024 个地址，且需要 `CAP_NET_RAW` 或管理员权限。
+- IP 采集是独立目标；ICMP 扫描支持 IPv4 与 IPv6（IPv6 最宽 `/120`），单次最多 1024 个地址，且需要 `CAP_NET_RAW` 或管理员权限。更宽的 IPv6 网段请通过 SNMP 读取 NDP 表。
 - 批量设备扫描先做 ICMP 探活，单次最多 256 个地址；未开启 ICMP 权限时无法使用批量扫描。
 - 只有 MAC 能在 NetBox 中找到对应接口时才会自动分配 IP；未匹配地址默认不写入 IPAM。
 - 单次同步最多处理 1000 个 IP，超大 ARP 表会被截断并产生警告。

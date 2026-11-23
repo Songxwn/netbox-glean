@@ -307,7 +307,7 @@ function renderIPTargets() {
   const empty = $('ip-targets-empty');
   empty.classList.toggle('hidden', targets.length > 0);
   empty.textContent = state.ipTargets.length === 0
-    ? '还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4 网段，并把结果写入 NetBox IPAM。'
+    ? '还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4/IPv6 网段，并把结果写入 NetBox IPAM。'
     : '没有匹配的目标。';
 
   $('ip-targets-body').innerHTML = targets.map((target) => `

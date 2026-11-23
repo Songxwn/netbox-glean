@@ -103,7 +103,7 @@ type Target struct {
 }
 
 // IPTarget is an independent IP discovery job. It can read ARP/NDP tables
-// from a network device over SNMP, sweep IPv4 subnets with ICMP, or both.
+// from a network device over SNMP, sweep IPv4/IPv6 subnets with ICMP, or both.
 type IPTarget struct {
 	ID      string     `json:"id"`
 	Name    string     `json:"name"`

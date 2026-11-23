@@ -50,6 +50,12 @@ func DefaultPort(protocol string) int {
 // MaxScanHosts bounds one batch device scan.
 const MaxScanHosts = 256
 
+// MaxIPv6ScanPrefix is the widest IPv6 prefix an ICMP sweep can enumerate.
+// Wider prefixes (for example the typical /64 LAN) contain far too many
+// addresses, so IPv6 neighbors should be collected through the SNMP NDP
+// source instead.
+const MaxIPv6ScanPrefix = 120
+
 // ScanCIDRs returns the normalized ICMP sweep subnets of an IP target.
 func (t IPTarget) ScanCIDRs() []string {
 	return SplitList(t.Subnets)
@@ -180,7 +186,7 @@ func ValidateIPTarget(t IPTarget) error {
 	if t.Port < 0 || t.Port > 65535 {
 		return fmt.Errorf("invalid port %d", t.Port)
 	}
-	return validateIPv4CIDRs(t.ScanCIDRs())
+	return validateIPCIDRs(t.ScanCIDRs())
 }
 
 // ValidateScanRequest checks a batch device scan.
@@ -202,6 +208,26 @@ func ValidateScanRequest(r ScanRequest) error {
 	}
 	if count := ScanHostCount(cidrs); count > MaxScanHosts {
 		return fmt.Errorf("单次批量扫描最多 %d 个地址，请缩小网段（当前约 %d 个）", MaxScanHosts, count)
+	}
+	return nil
+}
+
+func validateIPCIDRs(cidrs []string) error {
+	for _, cidr := range cidrs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("无效的扫描网段 %q: %w", cidr, err)
+		}
+		ones, bits := network.Mask.Size()
+		switch bits {
+		case 32:
+		case 128:
+			if ones < MaxIPv6ScanPrefix {
+				return fmt.Errorf("IPv6 扫描网段 %s 过大，最多支持 /%d；更宽的网段请改用 SNMP NDP 来源", cidr, MaxIPv6ScanPrefix)
+			}
+		default:
+			return fmt.Errorf("无效的扫描网段 %q", cidr)
+		}
 	}
 	return nil
 }

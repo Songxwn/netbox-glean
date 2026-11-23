@@ -12,7 +12,7 @@ import (
 
 // RunIPDiscovery performs one independent IP discovery run. It reads the
 // ARP/NDP tables of the optional SNMP source device and/or sweeps the
-// configured IPv4 subnets with ICMP. Results are merged and normalized.
+// configured IPv4/IPv6 subnets with ICMP. Results are merged and normalized.
 func RunIPDiscovery(ctx context.Context, target model.IPTarget, logf model.LogFunc) (*model.Collected, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
@@ -48,7 +48,7 @@ func RunIPDiscovery(ctx context.Context, target model.IPTarget, logf model.LogFu
 				Source:  "icmp",
 			})
 		}
-		logf("ICMP 扫描 %d 个地址，存活 %d 个", scanned, len(addresses))
+		logf("ICMP/ICMPv6 扫描 %d 个地址，存活 %d 个", scanned, len(addresses))
 	}
 
 	out.IPAddresses = normalizeIPAddresses(out.IPAddresses)

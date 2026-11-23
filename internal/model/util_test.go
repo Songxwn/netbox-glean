@@ -113,8 +113,14 @@ func TestValidateIPTarget(t *testing.T) {
 	if err := ValidateIPTarget(IPTarget{Subnets: "10.0.0.0/33"}); err == nil {
 		t.Fatal("ValidateIPTarget() expected error for invalid subnet")
 	}
+	if err := ValidateIPTarget(IPTarget{Subnets: "2001:db8::/33"}); err == nil {
+		t.Fatal("ValidateIPTarget() expected error for an invalid IPv6 subnet")
+	}
+	if err := ValidateIPTarget(IPTarget{Subnets: "2001:db8::/120"}); err != nil {
+		t.Fatalf("ValidateIPTarget() unexpected error for IPv6 subnet: %v", err)
+	}
 	if err := ValidateIPTarget(IPTarget{Subnets: "2001:db8::/64"}); err == nil {
-		t.Fatal("ValidateIPTarget() expected error for IPv6 subnet")
+		t.Fatal("ValidateIPTarget() expected error for an oversized IPv6 subnet")
 	}
 }
 

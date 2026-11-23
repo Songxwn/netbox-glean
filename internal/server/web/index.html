@@ -141,7 +141,7 @@
           </table>
         </div>
         <div class="empty hidden" id="ip-targets-empty">
-          还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4 网段，并把结果写入 NetBox IPAM。
+          还没有 IP 采集目标。它可以读取 SNMP 设备的 ARP/NDP 表、扫描 IPv4/IPv6 网段，并把结果写入 NetBox IPAM。
         </div>
       </div>
     </section>
@@ -468,9 +468,9 @@
           <span>启用该目标（参与“采集全部”与定时任务）</span>
         </label>
         <label class="field span-2">
-          <span>扫描网段（IPv4 CIDR，逗号分隔）</span>
-          <input class="input" id="it-subnets" placeholder="10.0.0.0/24, 10.0.1.0/24" autocomplete="off">
-          <small>通过 ICMP 探活，用于发现网段内的地址。可与 SNMP 来源二选一或同时使用。</small>
+          <span>扫描网段（CIDR，逗号分隔）</span>
+          <input class="input" id="it-subnets" placeholder="10.0.0.0/24, 2001:db8::/120" autocomplete="off">
+          <small>通过 ICMP/ICMPv6 探活，用于发现网段内的地址。IPv6 最多支持 /120（256 个地址），更宽的网段请使用 SNMP NDP 来源。可与 SNMP 来源二选一或同时使用。</small>
         </label>
       </div>
 
