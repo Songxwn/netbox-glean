@@ -104,6 +104,8 @@ func finish(target model.Target, c *model.Collected) {
 	}
 	c.Neighbors = neighbors
 
+	c.IPAddresses = normalizeIPAddresses(c.IPAddresses)
+
 	components := make([]model.Component, 0, len(c.Components))
 	compSeen := map[string]int{}
 	for _, comp := range c.Components {

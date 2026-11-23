@@ -23,6 +23,24 @@ func TestSettingsSyncCablesDefault(t *testing.T) {
 	if !s.Settings().SyncCables {
 		t.Error("missing sync_cables should default to true")
 	}
+	if !s.Settings().SyncIPAddresses {
+		t.Error("missing sync_ip_addresses should default to true")
+	}
+}
+
+func TestSettingsSyncIPAddressesExplicitFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"sync_ip_addresses":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if s.Settings().SyncIPAddresses {
+		t.Error("explicit sync_ip_addresses=false must be preserved")
+	}
 }
 
 func TestSettingsSyncCablesExplicitFalse(t *testing.T) {
@@ -51,7 +69,7 @@ func TestSettingsEmptyFile(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	settings := s.Settings()
-	if !settings.SyncInterfaces || !settings.SyncCables {
+	if !settings.SyncInterfaces || !settings.SyncCables || !settings.SyncIPAddresses {
 		t.Errorf("defaults not applied: %#v", settings)
 	}
 }

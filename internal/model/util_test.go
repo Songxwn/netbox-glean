@@ -43,9 +43,10 @@ func TestDefaultPort(t *testing.T) {
 
 func TestNormalizeTarget(t *testing.T) {
 	target := Target{
-		Name:     "  core-sw-1 ",
-		Protocol: " SNMP ",
-		Address:  " 10.0.0.1 ",
+		Name:        "  core-sw-1 ",
+		Protocol:    " SNMP ",
+		Address:     " 10.0.0.1 ",
+		ScanSubnets: "10.0.0.0/24, 10.0.1.0/24 10.0.0.0/24",
 	}
 	NormalizeTarget(&target)
 	if target.Name != "core-sw-1" {
@@ -63,6 +64,12 @@ func TestNormalizeTarget(t *testing.T) {
 	if target.IPMI.Interface != "lanplus" {
 		t.Errorf("IPMI.Interface = %q, want lanplus", target.IPMI.Interface)
 	}
+	if target.ScanSubnets != "10.0.0.0/24, 10.0.1.0/24" {
+		t.Errorf("ScanSubnets = %q", target.ScanSubnets)
+	}
+	if got := target.ScanCIDRs(); len(got) != 2 {
+		t.Errorf("ScanCIDRs() = %v, want 2 entries", got)
+	}
 }
 
 func TestValidateTarget(t *testing.T) {
@@ -77,6 +84,15 @@ func TestValidateTarget(t *testing.T) {
 	}
 	if err := ValidateTarget(Target{Protocol: ProtocolIPMI, Address: "10.0.0.1", Port: 70000}); err == nil {
 		t.Fatal("ValidateTarget() expected error for invalid port")
+	}
+	if err := ValidateTarget(Target{Protocol: ProtocolSNMP, Address: "10.0.0.1", Port: 161, ScanSubnets: "10.0.0.0/24, 10.0.1.0/24"}); err != nil {
+		t.Fatalf("ValidateTarget() unexpected error for valid subnets: %v", err)
+	}
+	if err := ValidateTarget(Target{Protocol: ProtocolSNMP, Address: "10.0.0.1", Port: 161, ScanSubnets: "10.0.0.0/33"}); err == nil {
+		t.Fatal("ValidateTarget() expected error for invalid subnet")
+	}
+	if err := ValidateTarget(Target{Protocol: ProtocolSNMP, Address: "10.0.0.1", Port: 161, ScanSubnets: "2001:db8::/64"}); err == nil {
+		t.Fatal("ValidateTarget() expected error for IPv6 scan subnet")
 	}
 }
 

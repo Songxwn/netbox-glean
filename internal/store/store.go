@@ -72,6 +72,11 @@ func (s *Store) loadSettings() error {
 		if _, ok := presence["sync_cables"]; !ok {
 			settings.SyncCables = true
 		}
+		// sync_ip_addresses was added together with IP discovery and should
+		// also default to enabled for existing installations.
+		if _, ok := presence["sync_ip_addresses"]; !ok {
+			settings.SyncIPAddresses = true
+		}
 	}
 	if settings.TokenVersion == "" {
 		settings.TokenVersion = "auto"

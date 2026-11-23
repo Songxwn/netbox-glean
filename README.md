@@ -23,6 +23,7 @@
   - 厂商、Site、Device Role、Platform、Device Type、Device 自动查找或创建
   - 网卡接口同步（名称、类型、速率、MTU、MAC、启用状态）
   - **LLDP 自动连线**：读取 `LLDP-MIB` 邻居，自动在 NetBox 中创建 Interface 之间的 Cable
+  - **IP 地址发现**：读取 SNMP 设备的 ARP/NDP 表，或对指定 IPv4 网段做 ICMP 扫描；按 MAC 匹配接口后写入 NetBox IPAM
   - 硬件组件写入 Inventory Items（CPU、内存、硬盘、电源、风扇、BMC、固件等）
   - 可选设置管理地址为主 IP
   - 可选写入已存在的 `glean_*` 自定义字段
@@ -108,6 +109,7 @@ docker compose up -d --build
 Compose 默认把容器的 `8080` 映射到宿主机 `8788`，启动后访问 <http://localhost:8788>。
 
 > 采集局域网设备时，容器需要能访问目标网段。Linux 下可按需使用 `network_mode: host`。
+> 官方镜像已给二进制授予 `CAP_NET_RAW`（仅用于可选的 ICMP 扫描）。若容器以 `no-new-privileges` 运行，ICMP 扫描会被跳过，ARP/NDP 读取不受影响。
 > 数据卷中保存明文凭据，请限制宿主机访问权限。
 
 ### 从源码运行
@@ -210,6 +212,7 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 | 网卡 | Interface（按名称匹配，存在则更新） |
 | LLDP 邻居 | Cable（仅连接 NetBox 中已存在的设备与接口，已连接的接口会跳过） |
 | 硬件组件 | Inventory Item（按名称匹配，存在则更新） |
+| ARP/NDP 邻居、ICMP 存活地址 | IP Address（MAC 匹配到 NetBox 接口后自动分配） |
 | 管理地址 | 可选写入 IP Address 并设为主 IP |
 | CPU / 内存 / BIOS / BMC 等 | 可选写入 `glean_*` 自定义字段 |
 
@@ -222,11 +225,40 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 ### LLDP 自动连线
 
 - 仅 SNMP 目标会读取 LLDP（`LLDP-MIB` 的 `lldpRemTable`），IPMI 与 Redfish 目标不会产生邻居数据。
-- 同步顺序为：设备 → 接口 → Cable，因此新建的接口也可以立即连线。
+- 同步顺序为：设备 → 接口 → IP 地址 → Cable，因此新建的接口也可以立即连线。
 - 远端设备必须已存在于 NetBox，按设备名匹配（优先同一 Site）；远端端口依次按 `lldpRemPortId`、`lldpRemPortDesc`、MAC 地址匹配。
 - 已经存在 Cable 的接口会跳过，不覆盖人工维护的连线。
 - 可在「设置 → 同步选项」中关闭「按 LLDP 邻居自动创建连线」。
 - NetBox 4.x 使用 `a_terminations` / `b_terminations` 创建 Cable，3.x 使用旧版 termination 字段，工具会自动回退重试。
+
+### IP 地址发现
+
+在目标编辑窗口中勾选「启用 IP 地址发现」，采集时会读取 SNMP 设备的 `IP-MIB` 地址转换表：
+
+- `ipNetToMediaTable`：传统 IPv4 ARP 表
+- `ipNetToPhysicalTable`：IPv4 / IPv6 邻居表（NDP）
+
+还可以填写「ICMP 扫描网段」（逗号分隔的 IPv4 CIDR，例如 `10.0.0.0/24, 10.0.1.0/24`）。工具会向网段内每个可用地址发送 ICMP Echo：
+
+- 单次最多扫描 1024 个地址，自动跳过网络地址和广播地址。
+- 仅支持 IPv4；IPv6 邻居仍可通过 `ipNetToPhysicalTable` 读取。
+- 扫描结果会与 ARP/NDP 结果合并，同一地址优先保留 MAC 和接口信息。
+
+写入 NetBox 的行为：
+
+- 先按 MAC 查询 NetBox 接口（`/api/dcim/interfaces/?mac_address=...`）。
+- 匹配到接口时创建 `ipam.ipaddress` 并分配给该接口；已存在的 IP 如果尚未分配，会补上分配，但不会覆盖已有分配。
+- 未匹配到接口的 IP 默认跳过，避免把交换机 ARP 表中的手机、打印机等全部写入 IPAM。可在「设置 → 同步选项」勾选「写入未匹配 NetBox 接口的 IP」，以未分配形式写入。
+- 只有 ICMP 扫描结果时拿不到 MAC；需要写入 IPAM 时请开启上面的「写入未匹配 NetBox 接口的 IP」，或同时读取 ARP/NDP 表以获取 MAC。
+- 也可以在「设置 → 同步选项」关闭「同步发现的 IP 地址到 NetBox IPAM」，只查看采集结果。
+- 仅 SNMP 目标会产生 ARP/NDP 数据；ICMP 扫描由本机发起，需要能路由到目标网段。
+
+权限说明：
+
+- Linux / macOS 会优先使用非特权 ping socket，失败时回退到原始 ICMP socket。
+- 从源码运行且系统禁用了非特权 ping socket 时，可执行 `sudo setcap cap_net_raw=+ep ./netbox-glean` 授予该能力。
+- 官方 Docker 镜像已通过 `setcap cap_net_raw=+ep` 给二进制授予 `CAP_NET_RAW`；以 `no-new-privileges` 运行时需要自行调整。
+- Windows 需要以管理员身份运行；否则请关闭 ICMP 扫描，仅使用 ARP/NDP。
 
 ## 配置
 
@@ -273,6 +305,8 @@ Web UI 使用的接口也可以直接调用：
 | `DELETE` | `/api/jobs` | 清理已完成任务 |
 
 目标对象中与定时任务相关的字段：`schedule_enabled`、`schedule_interval_minutes`（分钟）、`last_run_at`（只读，由服务端维护）。任务对象新增 `trigger` 字段（`manual` / `schedule`）。
+
+目标对象中与 IP 地址发现相关的字段：`discover_ips`（布尔）、`scan_subnets`（逗号分隔的 IPv4 CIDR）。设置对象新增 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
 
 示例：
 
@@ -329,6 +363,7 @@ git push origin v0.1.0
 - 建议为 NetBox 使用最小权限专用 Token，并定期轮换。
 - SNMP v1/v2c Community 和 IPMI/Redfish 密码会以明文经过网络传输（Redfish 除外，使用 HTTPS）。请仅在受信管理网络中使用。
 - 「跳过 TLS 证书校验」会降低安全性，只建议在实验室或自签名证书环境临时使用。
+- ICMP 扫描需要 `CAP_NET_RAW`（容器镜像已通过文件能力授予）或管理员权限；请仅在受信管理网络中使用，避免扫描不属于自己的网段。
 - 定时任务按 30 秒粒度检查是否到期；进程停机期间错过的执行不会补跑，恢复后按 `last_run_at` 判断是否到期。
 - 任务历史保存在内存中，进程重启即清空；不会持久化采集到的凭据或结果。
 
@@ -340,6 +375,9 @@ git push origin v0.1.0
 - 硬件清单按名称匹配更新，不做删除；重命名组件会在 NetBox 中新增一条记录。
 - LLDP 只能发现直连邻居；远端设备未录入 NetBox、或接口命名与 LLDP 上报不一致时无法自动连线。
 - 每个接口只保留一条 Cable，已有连线不会被自动改写。
+- IP 发现仅对 SNMP 目标生效；ICMP 扫描只支持 IPv4，单次最多 1024 个地址，且需要 `CAP_NET_RAW` 或管理员权限。
+- 只有 MAC 能在 NetBox 中找到对应接口时才会自动分配 IP；未匹配地址默认不写入 IPAM。
+- 单次同步最多处理 1000 个 IP，超大 ARP 表会被截断并产生警告。
 - NetBox 写入为逐对象 REST 调用，大规模设备建议分批执行或提高超时。
 
 ## 目录结构

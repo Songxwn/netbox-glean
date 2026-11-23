@@ -25,13 +25,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:3.24
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata libcap-setcap \
     && addgroup -S -g 10001 glean \
     && adduser -S -D -H -u 10001 -G glean glean \
     && mkdir -p /data \
     && chown glean:glean /data
 
 COPY --from=build /out/netbox-glean /usr/local/bin/netbox-glean
+
+# The optional ICMP sweep needs a raw socket. Grant only CAP_NET_RAW to the
+# binary so the container can keep running as an unprivileged user.
+RUN setcap cap_net_raw=+ep /usr/local/bin/netbox-glean
 
 USER glean
 WORKDIR /data

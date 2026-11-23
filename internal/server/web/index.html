@@ -106,7 +106,7 @@
             <thead>
               <tr>
                 <th>名称</th><th>协议</th><th>地址</th><th>Site</th>
-                <th>NetBox 设备</th><th>定时</th><th>状态</th><th class="right">操作</th>
+                <th>NetBox 设备</th><th>定时</th><th>IP 发现</th><th>状态</th><th class="right">操作</th>
               </tr>
             </thead>
             <tbody id="targets-body"></tbody>
@@ -215,6 +215,14 @@
             <label class="field checkbox-field">
               <input type="checkbox" id="set-sync-cables">
               <span>按 LLDP 邻居自动创建连线（Cable）</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-sync-ip-addresses">
+              <span>同步发现的 IP 地址到 NetBox IPAM</span>
+            </label>
+            <label class="field checkbox-field">
+              <input type="checkbox" id="set-sync-unmatched-ips">
+              <span>写入未匹配 NetBox 接口的 IP（不分配）</span>
             </label>
             <label class="field checkbox-field">
               <input type="checkbox" id="set-custom-fields">
@@ -361,6 +369,21 @@
             <input class="input" id="s-v3-priv-pass" type="password" placeholder="留空表示不修改" autocomplete="new-password">
           </label>
         </div>
+      </fieldset>
+
+      <fieldset class="proto proto-snmp">
+        <legend>IP 地址发现</legend>
+        <div class="form-grid">
+          <label class="field checkbox-field">
+            <input type="checkbox" id="t-discover-ips">
+            <span>启用 IP 地址发现（ARP/NDP + ICMP 扫描）</span>
+          </label>
+          <label class="field">
+            <span>ICMP 扫描网段（可选，逗号分隔）</span>
+            <input class="input" id="t-scan-subnets" placeholder="10.0.0.0/24, 10.0.1.0/24" autocomplete="off">
+          </label>
+        </div>
+        <p class="muted hint">仅 SNMP 目标生效。ICMP 扫描需要 NET_RAW 权限（容器已授权，Windows 需管理员）；单次最多扫描 1024 个地址。</p>
       </fieldset>
 
       <fieldset class="proto proto-ipmi hidden">

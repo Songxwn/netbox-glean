@@ -150,6 +150,7 @@ fieldset.proto, fieldset.schedule-box { border: 1px solid var(--line); border-ra
 fieldset.proto legend, fieldset.schedule-box legend { padding: 0 8px; margin-left: 10px; color: #9bc0ff; font-weight: 700; font-size: 12px; letter-spacing: .5px; }
 fieldset.proto .form-grid, fieldset.schedule-box .form-grid { padding-top: 12px; }
 fieldset.schedule-box p { margin: 0 20px 12px; font-size: 12px; }
+fieldset.proto p.hint { margin: 0 20px 10px; font-size: 12px; }
 
 .modal, .drawer { position: fixed; inset: 0; z-index: 50; }
 .modal-backdrop, .drawer-backdrop { position: absolute; inset: 0; background: rgba(3, 7, 17, .72); backdrop-filter: blur(3px); }

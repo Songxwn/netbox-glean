@@ -44,11 +44,16 @@ type Settings struct {
 	SyncInterfaces  bool   `json:"sync_interfaces"`
 	SyncInventory   bool   `json:"sync_inventory"`
 	SyncCables      bool   `json:"sync_cables"`
-	PruneInterfaces bool   `json:"prune_interfaces"`
-	CustomFields    bool   `json:"custom_fields"`
-	AssignPrimaryIP bool   `json:"assign_primary_ip"`
+	// SyncIPAddresses writes IPs discovered through ARP/NDP tables and ICMP
+	// sweeps into NetBox IPAM. SyncUnmatchedIPs also writes addresses that
+	// cannot be attached to a known NetBox interface.
+	SyncIPAddresses  bool   `json:"sync_ip_addresses"`
+	SyncUnmatchedIPs bool   `json:"sync_unmatched_ips"`
+	PruneInterfaces  bool   `json:"prune_interfaces"`
+	CustomFields     bool   `json:"custom_fields"`
+	AssignPrimaryIP  bool   `json:"assign_primary_ip"`
 	PrimaryInterface string `json:"primary_interface"`
-	Description     string `json:"description,omitempty"`
+	Description      string `json:"description,omitempty"`
 }
 
 // DefaultSettings returns sensible defaults for a new installation.
@@ -59,6 +64,7 @@ func DefaultSettings() Settings {
 		SyncInterfaces:   true,
 		SyncInventory:    true,
 		SyncCables:       true,
+		SyncIPAddresses:  true,
 		CustomFields:     true,
 		PrimaryInterface: "mgmt0",
 		DeviceRole:       "server",
@@ -82,6 +88,10 @@ type Target struct {
 	SNMP        SNMPConfig    `json:"snmp"`
 	IPMI        IPMIConfig    `json:"ipmi"`
 	Redfish     RedfishConfig `json:"redfish"`
+	// DiscoverIPs enables reading the device ARP/NDP table and, when
+	// ScanSubnets is set, sweeping those subnets with ICMP echo.
+	DiscoverIPs bool   `json:"discover_ips"`
+	ScanSubnets string `json:"scan_subnets,omitempty"`
 	// ScheduleEnabled turns on periodic collection + sync for this target.
 	ScheduleEnabled         bool       `json:"schedule_enabled"`
 	ScheduleIntervalMinutes int        `json:"schedule_interval_minutes,omitempty"`
@@ -187,6 +197,18 @@ type Neighbor struct {
 	RemoteSysDesc   string `json:"remote_sys_desc,omitempty"`
 }
 
+// IPAddress is an address discovered from a device ARP/NDP table or an ICMP
+// sweep. Interface and MAC describe where the address was seen.
+type IPAddress struct {
+	Address      string `json:"address"`
+	PrefixLength int    `json:"prefix_length,omitempty"`
+	MAC          string `json:"mac,omitempty"`
+	Interface    string `json:"interface,omitempty"`
+	IfIndex      int    `json:"if_index,omitempty"`
+	Source       string `json:"source,omitempty"` // arp, ndp or icmp
+	State        string `json:"state,omitempty"`
+}
+
 // Component is a hardware component (inventory item in NetBox).
 type Component struct {
 	Name         string `json:"name"`
@@ -209,6 +231,7 @@ type Collected struct {
 	Interfaces  []Interface       `json:"interfaces,omitempty"`
 	Components  []Component       `json:"components,omitempty"`
 	Neighbors   []Neighbor        `json:"neighbors,omitempty"`
+	IPAddresses []IPAddress       `json:"ip_addresses,omitempty"`
 	Extra       map[string]string `json:"extra,omitempty"`
 	Warnings    []string          `json:"warnings,omitempty"`
 }
@@ -225,6 +248,9 @@ type SyncResult struct {
 	InventoryUpdated  int      `json:"inventory_updated"`
 	CablesCreated     int      `json:"cables_created"`
 	CablesSkipped     int      `json:"cables_skipped"`
+	IPCreated         int      `json:"ip_created"`
+	IPAssigned        int      `json:"ip_assigned"`
+	IPSkipped         int      `json:"ip_skipped"`
 	IPAddress         string   `json:"ip_address,omitempty"`
 	Actions           []string `json:"actions,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`

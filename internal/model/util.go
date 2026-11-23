@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"unicode/utf8"
 )
@@ -46,6 +47,39 @@ func DefaultPort(protocol string) int {
 	}
 }
 
+// ScanCIDRs returns the normalized ICMP sweep subnets of a target.
+func (t Target) ScanCIDRs() []string {
+	return SplitList(t.ScanSubnets)
+}
+
+// NormalizeSubnets collapses the supported separators into a comma separated
+// list and removes duplicates.
+func NormalizeSubnets(value string) string {
+	return strings.Join(SplitList(value), ", ")
+}
+
+// SplitList splits a comma, semicolon or whitespace separated list.
+func SplitList(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		switch r {
+		case ',', ';', ' ', '\t', '\r', '\n':
+			return true
+		}
+		return false
+	})
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" || seen[field] {
+			continue
+		}
+		seen[field] = true
+		out = append(out, field)
+	}
+	return out
+}
+
 // NormalizeTarget fills in defaults and strips accidental whitespace.
 func NormalizeTarget(t *Target) {
 	t.Name = strings.TrimSpace(t.Name)
@@ -56,6 +90,7 @@ func NormalizeTarget(t *Target) {
 	t.Platform = strings.TrimSpace(t.Platform)
 	t.DeviceName = strings.TrimSpace(t.DeviceName)
 	t.Description = strings.TrimSpace(t.Description)
+	t.ScanSubnets = NormalizeSubnets(t.ScanSubnets)
 	if t.Port == 0 {
 		t.Port = DefaultPort(t.Protocol)
 	}
@@ -95,6 +130,15 @@ func ValidateTarget(t Target) error {
 	}
 	if t.Port < 0 || t.Port > 65535 {
 		return fmt.Errorf("invalid port %d", t.Port)
+	}
+	for _, cidr := range t.ScanCIDRs() {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("无效的扫描网段 %q: %w", cidr, err)
+		}
+		if _, bits := network.Mask.Size(); bits != 32 {
+			return fmt.Errorf("ICMP 扫描当前仅支持 IPv4 网段: %s", cidr)
+		}
 	}
 	return nil
 }

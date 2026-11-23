@@ -111,6 +111,15 @@ function scheduleCell(target) {
   return `<span class="badge badge-success">每 ${minutesLabel(target.schedule_interval_minutes)}</span>${last}`;
 }
 
+function discoveryCell(target) {
+  if (!target.discover_ips) return '<span class="muted">关闭</span>';
+  const subnets = String(target.scan_subnets || '').split(/[,\s;]+/).filter(Boolean).length;
+  const scan = subnets
+    ? `<div class="muted">扫描 ${subnets} 个网段</div>`
+    : '<div class="muted">仅 ARP/NDP</div>';
+  return `<span class="badge badge-success">开启</span>${scan}`;
+}
+
 function statusBadge(status) {
   return `<span class="badge badge-${esc(status)}">${esc(statusLabels[status] || status)}</span>`;
 }
@@ -259,6 +268,7 @@ function renderTargets() {
       <td>${target.site ? `<span class="mono">${esc(target.site)}</span>` : '<span class="muted">默认</span>'}</td>
       <td>${target.device_name ? esc(target.device_name) : '<span class="muted">自动</span>'}</td>
       <td>${scheduleCell(target)}</td>
+      <td>${discoveryCell(target)}</td>
       <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
       <td>
         <div class="actions">
@@ -307,6 +317,8 @@ function fillSettings(settings) {
   setChecked('set-sync-interfaces', settings.sync_interfaces);
   setChecked('set-sync-inventory', settings.sync_inventory);
   setChecked('set-sync-cables', settings.sync_cables);
+  setChecked('set-sync-ip-addresses', settings.sync_ip_addresses);
+  setChecked('set-sync-unmatched-ips', settings.sync_unmatched_ips);
   setChecked('set-prune-interfaces', settings.prune_interfaces);
   setChecked('set-custom-fields', settings.custom_fields);
   setChecked('set-assign-ip', settings.assign_primary_ip);
@@ -362,6 +374,8 @@ function openTargetModal(target) {
   setChecked('t-enabled', target ? target.enabled : true);
   setChecked('t-schedule-enabled', target ? Boolean(target.schedule_enabled) : false);
   setVal('t-schedule-interval', target && target.schedule_interval_minutes ? target.schedule_interval_minutes : 60);
+  setChecked('t-discover-ips', target ? Boolean(target.discover_ips) : false);
+  setVal('t-scan-subnets', target ? target.scan_subnets : '');
 
   setVal('s-version', snmp.version || 'v2c');
   setVal('s-community', '');
@@ -389,8 +403,9 @@ function toggleProtocolFields(protocol) {
   document.querySelectorAll('.proto').forEach((node) => {
     node.classList.add('hidden');
   });
-  const section = document.querySelector(`.proto-${protocol}`);
-  if (section) section.classList.remove('hidden');
+  document.querySelectorAll(`.proto-${protocol}`).forEach((node) => {
+    node.classList.remove('hidden');
+  });
 }
 
 function closeTargetModal() {
@@ -413,6 +428,8 @@ async function saveTarget(event) {
     description: val('t-description'),
     schedule_enabled: checked('t-schedule-enabled'),
     schedule_interval_minutes: Number.parseInt(val('t-schedule-interval'), 10) || 60,
+    discover_ips: checked('t-discover-ips'),
+    scan_subnets: val('t-scan-subnets'),
     snmp: {
       version: val('s-version'),
       community: val('s-community'),
@@ -464,6 +481,8 @@ async function saveSettings(event) {
     sync_interfaces: checked('set-sync-interfaces'),
     sync_inventory: checked('set-sync-inventory'),
     sync_cables: checked('set-sync-cables'),
+    sync_ip_addresses: checked('set-sync-ip-addresses'),
+    sync_unmatched_ips: checked('set-sync-unmatched-ips'),
     prune_interfaces: checked('set-prune-interfaces'),
     custom_fields: checked('set-custom-fields'),
     assign_primary_ip: checked('set-assign-ip'),
@@ -571,6 +590,22 @@ function renderJobDetail(job) {
       </table>
     </div>` : '';
 
+  const ipList = result && Array.isArray(result.ip_addresses) ? result.ip_addresses : [];
+  const ipBlock = ipList.length ? `
+    <h3 class="section-title">发现的 IP 地址</h3>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>地址</th><th>MAC</th><th>接口</th><th>来源</th></tr></thead>
+        <tbody>${ipList.slice(0, 200).map((entry) => `<tr>
+          <td class="mono">${esc(entry.address || '—')}</td>
+          <td class="mono">${esc(entry.mac || '—')}</td>
+          <td class="mono">${esc(entry.interface || '—')}</td>
+          <td class="muted">${esc(entry.source || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    ${ipList.length > 200 ? `<p class="muted">仅显示前 200 条，共 ${ipList.length} 条。</p>` : ''}` : '';
+
   const warnings = [];
   if (result && Array.isArray(result.warnings)) warnings.push(...result.warnings);
   if (sync && Array.isArray(sync.warnings)) warnings.push(...sync.warnings);
@@ -584,6 +619,7 @@ function renderJobDetail(job) {
       <dt>设备</dt><dd>${esc(sync.device_name || '—')} (#${sync.device_id}) ${sync.device_url ? `· <a href="${esc(sync.device_url)}" target="_blank" rel="noreferrer">打开</a>` : ''}</dd>
       <dt>接口</dt><dd>新建 ${sync.interfaces_created} / 更新 ${sync.interfaces_updated}</dd>
       <dt>LLDP 连线</dt><dd>新建 ${sync.cables_created || 0} / 跳过 ${sync.cables_skipped || 0}</dd>
+      <dt>发现的 IP</dt><dd>新建 ${sync.ip_created || 0} / 分配 ${sync.ip_assigned || 0} / 跳过 ${sync.ip_skipped || 0}</dd>
       <dt>硬件清单</dt><dd>新建 ${sync.inventory_created} / 更新 ${sync.inventory_updated}</dd>
       ${sync.ip_address ? `<dt>主 IP</dt><dd class="mono">${esc(sync.ip_address)}</dd>` : ''}
     </dl>
@@ -600,6 +636,7 @@ function renderJobDetail(job) {
     ${syncBlock}
     ${identityBlock}
     ${neighborBlock}
+    ${ipBlock}
     ${warningBlock}
     <h3 class="section-title">任务日志</h3>
     <pre class="log-box mono">${esc(log)}</pre>

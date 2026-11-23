@@ -127,6 +127,17 @@ func Sync(ctx context.Context, settings model.Settings, target model.Target, dat
 		}
 	}
 
+	if settings.SyncIPAddresses && len(data.IPAddresses) > 0 {
+		createdCount, assignedCount, skippedCount, warnings := client.syncIPAddresses(ctx, deviceName, data.IPAddresses, settings.SyncUnmatchedIPs, logf)
+		res.IPCreated = createdCount
+		res.IPAssigned = assignedCount
+		res.IPSkipped = skippedCount
+		res.Warnings = append(res.Warnings, warnings...)
+		if createdCount+assignedCount+skippedCount > 0 {
+			res.Add("IP 地址: 新建 %d, 分配 %d, 跳过 %d", createdCount, assignedCount, skippedCount)
+		}
+	}
+
 	if settings.SyncCables && len(data.Neighbors) > 0 {
 		createdCount, skippedCount, warnings := client.syncCables(ctx, deviceID, deviceName, siteSlug, data.Neighbors, logf)
 		res.CablesCreated = createdCount

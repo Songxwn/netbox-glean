@@ -265,6 +265,7 @@ func collectSNMP(ctx context.Context, target model.Target, logf model.LogFunc) (
 	})
 
 	collectLLDP(params, ifaceTable, bulk, out, logf)
+	collectIPDiscovery(ctx, params, ifaceTable, bulk, target, out, logf)
 
 	if len(sys) == 0 && len(entity) == 0 && len(out.Interfaces) == 0 {
 		if firstErr != nil {
@@ -272,7 +273,7 @@ func collectSNMP(ctx context.Context, target model.Target, logf model.LogFunc) (
 		}
 		return nil, fmt.Errorf("SNMP 未返回可用数据")
 	}
-	logf("SNMP 采集完成: 系统字段 %d, 组件 %d, 接口 %d, LLDP 邻居 %d", len(sys), len(out.Components), len(out.Interfaces), len(out.Neighbors))
+	logf("SNMP 采集完成: 系统字段 %d, 组件 %d, 接口 %d, LLDP 邻居 %d, IP 地址 %d", len(sys), len(out.Components), len(out.Interfaces), len(out.Neighbors), len(out.IPAddresses))
 	return out, nil
 }
 
