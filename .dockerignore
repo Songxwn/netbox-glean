@@ -1,0 +1,14 @@
+.git
+.github
+.gitignore
+.gitattributes
+Dockerfile
+.dockerignore
+Makefile
+README.md
+LICENSE
+dist
+data
+*.exe
+*.test
+*.out

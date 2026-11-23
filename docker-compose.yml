@@ -1,0 +1,29 @@
+services:
+  netbox-glean:
+    build:
+      context: .
+      args:
+        VERSION: dev
+    image: netbox-glean:latest
+    container_name: netbox-glean
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      NETBOX_GLEAN_LISTEN: "0.0.0.0:8080"
+      NETBOX_GLEAN_DATA_DIR: "/data"
+      # 建议开启 Web 登录（也可在启动参数中设置）
+      # NETBOX_GLEAN_WEB_USERNAME: admin
+      # NETBOX_GLEAN_WEB_PASSWORD: change-me
+      # 可选的首次启动初始值，之后以 Web UI 中的设置为准
+      # NETBOX_GLEAN_NETBOX_URL: https://netbox.example.com
+      # NETBOX_GLEAN_NETBOX_TOKEN: your-token
+      # NETBOX_GLEAN_SITE: dc1
+    volumes:
+      - glean-data:/data
+    # 如果 NetBox 与设备都在宿主机可达的网段，
+    # 使用 host 网络通常最省事（Linux）。
+    # network_mode: host
+
+volumes:
+  glean-data:
