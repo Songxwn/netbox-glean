@@ -20,6 +20,12 @@ const (
 	StatusError   = "error"
 )
 
+// Job triggers describe what started a job.
+const (
+	TriggerManual   = "manual"
+	TriggerSchedule = "schedule"
+)
+
 // Job is one collection or sync run.
 type Job struct {
 	ID         string           `json:"id"`
@@ -27,6 +33,7 @@ type Job struct {
 	TargetName string           `json:"target_name"`
 	Protocol   string           `json:"protocol"`
 	Mode       string           `json:"mode"`
+	Trigger    string           `json:"trigger"`
 	Status     string           `json:"status"`
 	CreatedAt  time.Time        `json:"created_at"`
 	StartedAt  *time.Time       `json:"started_at,omitempty"`
@@ -44,6 +51,7 @@ type JobSummary struct {
 	TargetName string     `json:"target_name"`
 	Protocol   string     `json:"protocol"`
 	Mode       string     `json:"mode"`
+	Trigger    string     `json:"trigger"`
 	Status     string     `json:"status"`
 	CreatedAt  time.Time  `json:"created_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
@@ -93,8 +101,12 @@ func New(opts Options) *Manager {
 	}
 }
 
-// Start queues a job and returns its ID.
-func (m *Manager) Start(target model.Target, mode string, run RunFunc) string {
+// Start queues a job and returns its ID. The trigger is "manual" or
+// "schedule" and is recorded for display purposes.
+func (m *Manager) Start(target model.Target, mode, trigger string, run RunFunc) string {
+	if trigger == "" {
+		trigger = TriggerManual
+	}
 	id := newID()
 	job := &Job{
 		ID:         id,
@@ -102,6 +114,7 @@ func (m *Manager) Start(target model.Target, mode string, run RunFunc) string {
 		TargetName: target.Name,
 		Protocol:   target.Protocol,
 		Mode:       mode,
+		Trigger:    trigger,
 		Status:     StatusQueued,
 		CreatedAt:  time.Now().UTC(),
 	}
@@ -212,6 +225,7 @@ func (m *Manager) List(limit int) []JobSummary {
 			TargetName: job.TargetName,
 			Protocol:   job.Protocol,
 			Mode:       job.Mode,
+			Trigger:    job.Trigger,
 			Status:     job.Status,
 			CreatedAt:  job.CreatedAt,
 			StartedAt:  job.StartedAt,
@@ -225,6 +239,21 @@ func (m *Manager) List(limit int) []JobSummary {
 		out = append(out, summary)
 	}
 	return out
+}
+
+// ActiveFor reports whether the target already has a queued or running job.
+func (m *Manager) ActiveFor(targetID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, job := range m.jobs {
+		if job.TargetID != targetID {
+			continue
+		}
+		if job.Status == StatusQueued || job.Status == StatusRunning {
+			return true
+		}
+	}
+	return false
 }
 
 // Stats returns counts by status.

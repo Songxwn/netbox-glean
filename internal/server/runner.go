@@ -4,17 +4,27 @@ import (
 	"context"
 
 	"github.com/Songxwn/netbox-glean/internal/collect"
+	"github.com/Songxwn/netbox-glean/internal/jobs"
 	"github.com/Songxwn/netbox-glean/internal/model"
 	"github.com/Songxwn/netbox-glean/internal/netbox"
 )
 
+// startJob starts a manually triggered job (web UI or API).
 func (s *Server) startJob(target model.Target, sync bool) string {
+	return s.startJobWith(target, sync, jobs.TriggerManual)
+}
+
+// startJobWith starts a job and records what triggered it.
+func (s *Server) startJobWith(target model.Target, sync bool, trigger string) string {
 	mode := model.ModeCollect
 	if sync {
 		mode = model.ModeSync
 	}
 	settings := s.store.Settings()
-	return s.jobs.Start(target, mode, func(ctx context.Context, logf model.LogFunc) (*model.Collected, *model.SyncResult, error) {
+	return s.jobs.Start(target, mode, trigger, func(ctx context.Context, logf model.LogFunc) (*model.Collected, *model.SyncResult, error) {
+		if trigger == jobs.TriggerSchedule {
+			logf("定时任务: 每 %d 分钟", int(target.ScheduleInterval().Minutes()))
+		}
 		logf("目标: %s", target.Name)
 		logf("协议: %s, 地址: %s:%d", target.Protocol, target.Address, target.Port)
 		data, err := collect.Run(ctx, target, logf)

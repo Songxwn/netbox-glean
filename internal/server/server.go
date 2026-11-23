@@ -39,10 +39,11 @@ type Server struct {
 	webUser  string
 	webPass  string
 	logger   *slog.Logger
+	handler  http.Handler
 }
 
-// New creates the HTTP handler.
-func New(opts Options) http.Handler {
+// New creates the HTTP handler and scheduler owner.
+func New(opts Options) *Server {
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -87,7 +88,13 @@ func New(opts Options) http.Handler {
 	}
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
-	return s.recoverer(s.accessLog(s.securityHeaders(s.basicAuth(mux))))
+	s.handler = s.recoverer(s.accessLog(s.securityHeaders(s.basicAuth(mux))))
+	return s
+}
+
+// ServeHTTP implements http.Handler.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.handler.ServeHTTP(w, r)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

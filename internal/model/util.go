@@ -59,6 +59,15 @@ func NormalizeTarget(t *Target) {
 	if t.Port == 0 {
 		t.Port = DefaultPort(t.Protocol)
 	}
+	if t.ScheduleIntervalMinutes <= 0 {
+		t.ScheduleIntervalMinutes = DefaultScheduleMinutes
+	}
+	if t.ScheduleIntervalMinutes < MinScheduleMinutes {
+		t.ScheduleIntervalMinutes = MinScheduleMinutes
+	}
+	if t.ScheduleIntervalMinutes > MaxScheduleMinutes {
+		t.ScheduleIntervalMinutes = MaxScheduleMinutes
+	}
 	if t.Name == "" {
 		t.Name = t.Address
 	}

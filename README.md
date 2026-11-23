@@ -35,6 +35,7 @@
   - GitHub Actions 自动构建 Linux / Windows / macOS / FreeBSD 多架构发布包
 - **任务模型**
   - 后台并发执行，限制并发数与单任务超时
+  - 每个目标可开启定时任务，按分钟间隔自动采集并同步
   - 内存中保留任务历史与日志（重启后清空）
 
 ## 工作流程
@@ -187,6 +188,17 @@ go run ./cmd/netbox-glean --listen 127.0.0.1:8080 --data-dir ./data
 - IPMI 采集的是 FRU 信息（机箱、主板、产品信息），不会读取传感器或 SEL。
 - 采集结果只是预览，不会写入 NetBox；同步任务才会写入。
 
+### 定时任务
+
+在目标的编辑窗口勾选「启用定时采集并同步」并填写间隔（分钟，5–10080）即可。行为说明：
+
+- 定时任务固定执行「采集并同步」，不需要在 Web UI 手动触发。
+- 首次启用后会立即执行一次，之后按 `last_run_at + 间隔` 判断是否到期。
+- 同一目标已有排队或运行中的任务时，本轮跳过，避免重复写入。
+- 目标被停用后不会再触发定时任务。
+- 调度状态保存在 `targets.json` 的 `last_run_at` 字段；重启不会丢失。
+- 任务列表与详情会标记触发方式（`manual` / `schedule`）。
+
 ## 数据映射
 
 | 采集结果 | NetBox 对象 |
@@ -260,6 +272,8 @@ Web UI 使用的接口也可以直接调用：
 | `GET` | `/api/jobs/{id}` | 任务详情（含日志与结果） |
 | `DELETE` | `/api/jobs` | 清理已完成任务 |
 
+目标对象中与定时任务相关的字段：`schedule_enabled`、`schedule_interval_minutes`（分钟）、`last_run_at`（只读，由服务端维护）。任务对象新增 `trigger` 字段（`manual` / `schedule`）。
+
 示例：
 
 ```bash
@@ -315,11 +329,11 @@ git push origin v0.1.0
 - 建议为 NetBox 使用最小权限专用 Token，并定期轮换。
 - SNMP v1/v2c Community 和 IPMI/Redfish 密码会以明文经过网络传输（Redfish 除外，使用 HTTPS）。请仅在受信管理网络中使用。
 - 「跳过 TLS 证书校验」会降低安全性，只建议在实验室或自签名证书环境临时使用。
+- 定时任务按 30 秒粒度检查是否到期；进程停机期间错过的执行不会补跑，恢复后按 `last_run_at` 判断是否到期。
 - 任务历史保存在内存中，进程重启即清空；不会持久化采集到的凭据或结果。
 
 ## 已知限制
 
-- 不支持定时任务；当前由 Web UI 或 API 手动触发。
 - 不支持 NetBox v2 Token 的自动刷新；Token 过期后需要重新填写。
 - SNMP 采集以标准 MIB（`ENTITY-MIB`、`IF-MIB`）为主，厂商私有 MIB 未覆盖。
 - IPMI 仅采集 FRU，不采集传感器、SEL、SOL。
@@ -337,7 +351,7 @@ internal/netbox/         NetBox REST 客户端与同步逻辑
 internal/model/          共享数据类型与默认值
 internal/store/          JSON 持久化
 internal/jobs/           后台任务管理
-internal/server/         HTTP API 与 Web UI
+internal/server/         HTTP API、Web UI 与定时调度
 internal/server/web/     前端静态资源（go:embed）
 internal/config/         命令行与环境变量
 .github/workflows/       CI / Release / 容器镜像

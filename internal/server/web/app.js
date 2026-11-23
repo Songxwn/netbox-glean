@@ -23,6 +23,7 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
 
 const protocolLabels = { snmp: 'SNMP', ipmi: 'IPMI', redfish: 'Redfish' };
 const modeLabels = { collect: '采集预览', sync: '采集并同步' };
+const triggerLabels = { manual: '手动', schedule: '定时' };
 const statusLabels = { queued: '排队', running: '运行中', success: '成功', error: '失败' };
 
 async function api(path, options = {}) {
@@ -95,6 +96,21 @@ function fmtDuration(job) {
   return `${(ms / 60000).toFixed(1)} min`;
 }
 
+function minutesLabel(minutes) {
+  const value = Number(minutes) || 60;
+  if (value % 1440 === 0) return `${value / 1440} 天`;
+  if (value % 60 === 0) return `${value / 60} 小时`;
+  return `${value} 分钟`;
+}
+
+function scheduleCell(target) {
+  if (!target.schedule_enabled) return '<span class="muted">关闭</span>';
+  const last = target.last_run_at
+    ? `<div class="muted">上次 ${esc(fmtTime(target.last_run_at))}</div>`
+    : '<div class="muted">等待首次执行</div>';
+  return `<span class="badge badge-success">每 ${minutesLabel(target.schedule_interval_minutes)}</span>${last}`;
+}
+
 function statusBadge(status) {
   return `<span class="badge badge-${esc(status)}">${esc(statusLabels[status] || status)}</span>`;
 }
@@ -152,9 +168,17 @@ function startPolling() {
   state.pollTimer = setInterval(async () => {
     if (document.hidden) return;
     try {
-      const [jobs, stats] = await Promise.all([api('/api/jobs?limit=200'), api('/api/stats')]);
+      state.pollCount = (state.pollCount || 0) + 1;
+      const wantTargets = state.pollCount % 5 === 0;
+      const requests = [api('/api/jobs?limit=200'), api('/api/stats')];
+      if (wantTargets) requests.push(api('/api/targets'));
+      const [jobs, stats, targets] = await Promise.all(requests);
       state.jobs = jobs;
       state.stats = stats;
+      if (targets) {
+        state.targets = targets;
+        renderTargets();
+      }
       renderDashboard();
       renderJobs();
       if (state.openJobId && !$('drawer-job').classList.contains('hidden')) {
@@ -205,7 +229,7 @@ function renderDashboard() {
   $('recent-jobs').innerHTML = recent.map((job) => `
     <tr data-job-id="${esc(job.id)}" style="cursor:pointer">
       <td>${esc(job.target_name)}<div class="muted mono">${esc(job.id)}</div></td>
-      <td>${esc(modeLabels[job.mode] || job.mode)}</td>
+      <td>${esc(modeLabels[job.mode] || job.mode)}${job.trigger === 'schedule' ? ' · 定时' : ''}</td>
       <td>${statusBadge(job.status)}</td>
       <td class="muted">${esc(fmtTime(job.created_at))}</td>
     </tr>
@@ -234,6 +258,7 @@ function renderTargets() {
       <td class="mono">${esc(target.address)}:${esc(target.port)}</td>
       <td>${target.site ? `<span class="mono">${esc(target.site)}</span>` : '<span class="muted">默认</span>'}</td>
       <td>${target.device_name ? esc(target.device_name) : '<span class="muted">自动</span>'}</td>
+      <td>${scheduleCell(target)}</td>
       <td>${target.enabled ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-queued">停用</span>'}</td>
       <td>
         <div class="actions">
@@ -254,7 +279,7 @@ function renderJobs() {
     <tr>
       <td><strong>${esc(job.target_name)}</strong><div class="muted mono">${esc(job.id)}</div></td>
       <td>${protocolBadge(job.protocol)}</td>
-      <td>${esc(modeLabels[job.mode] || job.mode)}</td>
+      <td>${esc(modeLabels[job.mode] || job.mode)}${job.trigger === 'schedule' ? ' · 定时' : ''}</td>
       <td>${statusBadge(job.status)}${job.error ? `<div class="muted">${esc(job.error.slice(0, 80))}</div>` : ''}</td>
       <td>${job.interfaces}</td>
       <td>${job.components}</td>
@@ -335,6 +360,8 @@ function openTargetModal(target) {
   setVal('t-device-name', target ? target.device_name : '');
   setVal('t-description', target ? target.description : '');
   setChecked('t-enabled', target ? target.enabled : true);
+  setChecked('t-schedule-enabled', target ? Boolean(target.schedule_enabled) : false);
+  setVal('t-schedule-interval', target && target.schedule_interval_minutes ? target.schedule_interval_minutes : 60);
 
   setVal('s-version', snmp.version || 'v2c');
   setVal('s-community', '');
@@ -384,6 +411,8 @@ async function saveTarget(event) {
     platform: val('t-platform'),
     device_name: val('t-device-name'),
     description: val('t-description'),
+    schedule_enabled: checked('t-schedule-enabled'),
+    schedule_interval_minutes: Number.parseInt(val('t-schedule-interval'), 10) || 60,
     snmp: {
       version: val('s-version'),
       community: val('s-community'),
@@ -508,6 +537,7 @@ function renderJobDetail(job) {
       <dt>任务 ID</dt><dd class="mono">${esc(job.id)}</dd>
       <dt>协议</dt><dd>${protocolBadge(job.protocol)}</dd>
       <dt>模式</dt><dd>${esc(modeLabels[job.mode] || job.mode)}</dd>
+      <dt>触发</dt><dd>${esc(triggerLabels[job.trigger] || '手动')}</dd>
       <dt>创建 / 开始 / 结束</dt><dd>${esc(fmtTime(job.created_at))} / ${esc(fmtTime(job.started_at))} / ${esc(fmtTime(job.finished_at))}</dd>
       <dt>耗时</dt><dd>${esc(fmtDuration(job))}</dd>
       ${job.error ? `<dt>错误</dt><dd class="badge-error">${esc(job.error)}</dd>` : ''}

@@ -73,6 +73,11 @@ func run() error {
 		Logger:      logger,
 	})
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	handler.StartScheduler(ctx)
+
 	httpServer := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           handler,
@@ -87,9 +92,6 @@ func run() error {
 			errCh <- err
 		}
 	}()
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	select {
 	case err := <-errCh:

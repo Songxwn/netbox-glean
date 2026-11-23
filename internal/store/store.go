@@ -233,6 +233,22 @@ func (s *Store) SaveTarget(t model.Target) (model.Target, error) {
 	return t, nil
 }
 
+// MarkTargetRun records when a scheduled run started and persists it so the
+// schedule survives restarts. It is a no-op for deleted targets.
+func (s *Store) MarkTargetRun(id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at = at.UTC()
+	for i := range s.targets {
+		if s.targets[i].ID != id {
+			continue
+		}
+		s.targets[i].LastRunAt = &at
+		return writeJSON(filepath.Join(s.dir, targetsFile), s.targets)
+	}
+	return nil
+}
+
 // DeleteTarget removes a target by ID.
 func (s *Store) DeleteTarget(id string) (bool, error) {
 	s.mu.Lock()

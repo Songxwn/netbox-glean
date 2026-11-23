@@ -17,6 +17,13 @@ const (
 	ModeSync    = "sync"
 )
 
+// Automatic collection defaults. Intervals are expressed in minutes.
+const (
+	DefaultScheduleMinutes = 60
+	MinScheduleMinutes     = 5
+	MaxScheduleMinutes     = 10080 // 7 days
+)
+
 // LogFunc is the logging callback shared by collectors and NetBox sync.
 type LogFunc func(format string, args ...any)
 
@@ -75,8 +82,39 @@ type Target struct {
 	SNMP        SNMPConfig    `json:"snmp"`
 	IPMI        IPMIConfig    `json:"ipmi"`
 	Redfish     RedfishConfig `json:"redfish"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
+	// ScheduleEnabled turns on periodic collection + sync for this target.
+	ScheduleEnabled         bool       `json:"schedule_enabled"`
+	ScheduleIntervalMinutes int        `json:"schedule_interval_minutes,omitempty"`
+	LastRunAt               *time.Time `json:"last_run_at,omitempty"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+}
+
+// ScheduleInterval returns the normalized interval between scheduled runs.
+func (t Target) ScheduleInterval() time.Duration {
+	minutes := t.ScheduleIntervalMinutes
+	if minutes <= 0 {
+		minutes = DefaultScheduleMinutes
+	}
+	if minutes < MinScheduleMinutes {
+		minutes = MinScheduleMinutes
+	}
+	if minutes > MaxScheduleMinutes {
+		minutes = MaxScheduleMinutes
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// ScheduleDue reports whether the target needs a scheduled run at now. A
+// target that has never run is due immediately.
+func (t Target) ScheduleDue(now time.Time) bool {
+	if !t.Enabled || !t.ScheduleEnabled {
+		return false
+	}
+	if t.LastRunAt == nil || t.LastRunAt.IsZero() {
+		return true
+	}
+	return now.Sub(*t.LastRunAt) >= t.ScheduleInterval()
 }
 
 // SNMPConfig holds SNMP v1/v2c/v3 credentials.

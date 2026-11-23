@@ -208,6 +208,7 @@ func (s *Server) handleCreateTarget(w http.ResponseWriter, r *http.Request) {
 	target.ID = ""
 	target.CreatedAt = time.Time{}
 	target.UpdatedAt = time.Time{}
+	target.LastRunAt = nil
 	model.NormalizeTarget(&target)
 	if err := model.ValidateTarget(target); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -234,6 +235,7 @@ func (s *Server) handleUpdateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	target.ID = existing.ID
 	target.CreatedAt = existing.CreatedAt
+	target.LastRunAt = existing.LastRunAt
 	mergeTargetSecrets(&target, existing)
 	model.NormalizeTarget(&target)
 	if err := model.ValidateTarget(target); err != nil {

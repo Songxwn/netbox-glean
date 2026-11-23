@@ -1,6 +1,9 @@
 package model
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestFirst(t *testing.T) {
 	if got := First("", "  ", " value "); got != "value" {
@@ -74,5 +77,52 @@ func TestValidateTarget(t *testing.T) {
 	}
 	if err := ValidateTarget(Target{Protocol: ProtocolIPMI, Address: "10.0.0.1", Port: 70000}); err == nil {
 		t.Fatal("ValidateTarget() expected error for invalid port")
+	}
+}
+
+func TestNormalizeScheduleInterval(t *testing.T) {
+	cases := map[int]int{
+		0:     DefaultScheduleMinutes,
+		-5:    DefaultScheduleMinutes,
+		1:     MinScheduleMinutes,
+		4:     MinScheduleMinutes,
+		5:     5,
+		60:    60,
+		20000: MaxScheduleMinutes,
+	}
+	for in, want := range cases {
+		target := Target{Protocol: ProtocolSNMP, Address: "10.0.0.1", ScheduleIntervalMinutes: in}
+		NormalizeTarget(&target)
+		if target.ScheduleIntervalMinutes != want {
+			t.Errorf("interval %d normalized to %d, want %d", in, target.ScheduleIntervalMinutes, want)
+		}
+	}
+}
+
+func TestScheduleDue(t *testing.T) {
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-30 * time.Minute)
+	old := now.Add(-90 * time.Minute)
+	zero := time.Time{}
+
+	cases := []struct {
+		name   string
+		target Target
+		want   bool
+	}{
+		{name: "enabled target without schedule", target: Target{Enabled: true}, want: false},
+		{name: "disabled target with schedule", target: Target{Enabled: false, ScheduleEnabled: true}, want: false},
+		{name: "never ran", target: Target{Enabled: true, ScheduleEnabled: true, ScheduleIntervalMinutes: 60}, want: true},
+		{name: "zero last run", target: Target{Enabled: true, ScheduleEnabled: true, ScheduleIntervalMinutes: 60, LastRunAt: &zero}, want: true},
+		{name: "not due", target: Target{Enabled: true, ScheduleEnabled: true, ScheduleIntervalMinutes: 60, LastRunAt: &recent}, want: false},
+		{name: "due", target: Target{Enabled: true, ScheduleEnabled: true, ScheduleIntervalMinutes: 60, LastRunAt: &old}, want: true},
+		{name: "short interval due", target: Target{Enabled: true, ScheduleEnabled: true, ScheduleIntervalMinutes: 5, LastRunAt: &recent}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.target.ScheduleDue(now); got != tc.want {
+				t.Fatalf("ScheduleDue() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
