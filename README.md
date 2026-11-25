@@ -61,15 +61,56 @@
 
 ## 工作流程
 
-```text
-┌─────────────┐   SNMP / IPMI / Redfish   ┌──────────────┐
-│  设备 / BMC  │ ◀──────────────────────── │ netbox-glean │
-└─────────────┘                           └──────┬───────┘
-                                                 │ REST API
-                                                 ▼
-                                          ┌──────────────┐
-                                          │    NetBox    │
-                                          └──────────────┘
+```mermaid
+flowchart LR
+    subgraph L1["🖥️ 交互入口"]
+        direction TB
+        UI["Web UI<br/>中英双语"]
+        API["HTTP API"]
+        SCHED["⏰ 定时调度"]
+    end
+
+    subgraph L2["⚙️ 核心调度与存储"]
+        direction TB
+        RUNNER["🚀 任务运行器<br/>并发限制 · 单任务超时<br/>内存日志 / 结果"]
+        STORE[("📁 JSON 持久化<br/>设置 / 目标 · 0600")]
+    end
+
+    subgraph L3["📡 三条独立采集流水线"]
+        direction TB
+        DEV["🔧 设备采集<br/>SNMP · IPMI · Redfish<br/>来源：设备 / BMC"]
+        IPC["🌐 IP 采集<br/>ARP/NDP · ICMP/ICMPv6<br/>来源：IPv4/IPv6 网段"]
+        CLD["☁️ 云资产采集<br/>vCenter · PVE · 6 大公有云<br/>来源：云 API（手写签名）"]
+    end
+
+    subgraph L4["🗄️ NetBox · REST v1/v2 Token"]
+        direction TB
+        DCIM["DCIM<br/>Device · Interface<br/>Cable · Inventory"]
+        IPAM["IPAM<br/>Prefix · IP Address"]
+    end
+
+    UI --> API
+    API --> RUNNER
+    API --> STORE
+    SCHED --> RUNNER
+    RUNNER --> DEV & IPC & CLD
+    CLD -->|网段 / 实例 IP / EIP| IPAM
+    IPC -->|MAC 匹配接口| IPAM
+    DEV -->|硬件 / 接口 / LLDP 连线| DCIM
+
+    style L1 fill:#f5f9ff,stroke:#90caf9,stroke-width:1.5px,color:#0d47a1
+    style L2 fill:#fffaf3,stroke:#ffcc80,stroke-width:1.5px,color:#e65100
+    style L3 fill:#f4fbf5,stroke:#a5d6a7,stroke-width:1.5px,color:#1b5e20
+    style L4 fill:#fdf5f8,stroke:#f48fb1,stroke-width:1.5px,color:#880e4f
+
+    classDef c1 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+    classDef c2 fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
+    classDef c3 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef c4 fill:#fce4ec,stroke:#ad1457,stroke-width:2px,color:#880e4f
+    class UI,API,SCHED c1
+    class RUNNER,STORE c2
+    class DEV,IPC,CLD c3
+    class DCIM,IPAM c4
 ```
 
 1. 在 Web UI 中配置 NetBox URL、Token、默认 Site 等。
