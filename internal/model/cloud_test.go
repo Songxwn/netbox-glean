@@ -35,6 +35,8 @@ func TestCloudProviderAliases(t *testing.T) {
 	cases := map[string]string{
 		"vmware":       CloudVCenter,
 		"vSphere":      CloudVCenter,
+		"proxmox":      CloudPVE,
+		"proxmox-ve":   CloudPVE,
 		"alibabacloud": CloudAliyun,
 		"qcloud":       CloudTencent,
 		"hwc":          CloudHuawei,
@@ -98,6 +100,40 @@ func TestValidateCloudTargetProviderSpecific(t *testing.T) {
 	vcenter.Endpoint = "https://vcenter.example.com"
 	if err := ValidateCloudTarget(vcenter); err != nil {
 		t.Errorf("valid vCenter rejected: %v", err)
+	}
+
+	pve := CloudTarget{
+		Provider:         CloudPVE,
+		CollectInstances: true,
+		AccessKey:        "root@pam",
+		SecretKey:        "pass",
+	}
+	if err := ValidateCloudTarget(pve); err == nil {
+		t.Error("PVE without endpoint should be rejected")
+	}
+	pve.Endpoint = "https://pve.example.com:8006"
+	if err := ValidateCloudTarget(pve); err != nil {
+		t.Errorf("valid PVE rejected: %v", err)
+	}
+	pve.AccessKey = "root@pam!glean"
+	if err := ValidateCloudTarget(pve); err != nil {
+		t.Errorf("valid PVE API token rejected: %v", err)
+	}
+	for _, user := range []string{"root", "root@pam!"} {
+		pve.AccessKey = user
+		if err := ValidateCloudTarget(pve); err == nil || !strings.Contains(err.Error(), "user@realm") {
+			t.Errorf("PVE user %q: err = %v, want format error", user, err)
+		}
+	}
+	pve.AccessKey = "root@pam"
+	pve.CollectInstances = false
+	pve.CollectPrefixes = true
+	if err := ValidateCloudTarget(pve); err == nil || !strings.Contains(err.Error(), "附加网段") {
+		t.Errorf("PVE without instances or extra subnets: %v", err)
+	}
+	pve.ExtraSubnets = "10.0.0.0/16"
+	if err := ValidateCloudTarget(pve); err != nil {
+		t.Errorf("PVE with extra subnets rejected: %v", err)
 	}
 
 	gcp := CloudTarget{Provider: CloudGCP, CollectInstances: true}

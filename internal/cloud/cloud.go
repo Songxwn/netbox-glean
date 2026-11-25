@@ -48,6 +48,8 @@ func Run(ctx context.Context, target model.CloudTarget, logf model.LogFunc) (*mo
 	switch target.Provider {
 	case model.CloudVCenter:
 		res, err = collectVCenter(ctx, hc, target, logf)
+	case model.CloudPVE:
+		res, err = collectPVE(ctx, hc, target, logf)
 	case model.CloudAliyun:
 		res, err = collectAliyun(ctx, hc, target, logf)
 	case model.CloudTencent:

@@ -168,7 +168,7 @@
           </table>
         </div>
         <div class="empty hidden" id="cloud-targets-empty" data-i18n="cloud.empty">
-          还没有云资产采集目标。支持 VMware vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud 与火山引擎，可采集 VPC/子网网段、实例 IP 和弹性公网 IP 并写入 NetBox IPAM。
+          还没有云资产采集目标。支持 VMware vCenter、Proxmox VE、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud 与火山引擎，可采集 VPC/子网网段、实例 IP 和弹性公网 IP 并写入 NetBox IPAM。
         </div>
       </div>
     </section>
@@ -603,6 +603,7 @@
           <span data-i18n="label.provider">云平台</span>
           <select class="input" id="ct-provider">
             <option value="vcenter" data-i18n="provider.vcenter">VMware vCenter</option>
+            <option value="pve" data-i18n="provider.pve">Proxmox VE</option>
             <option value="aliyun" data-i18n="provider.aliyunFull">阿里云（含国际站）</option>
             <option value="tencent" data-i18n="provider.tencent">腾讯云</option>
             <option value="huawei" data-i18n="provider.huawei">华为云</option>
@@ -618,7 +619,7 @@
         <label class="field span-2">
           <span id="ct-endpoint-label" data-i18n="ct.endpointOptional">API Endpoint（可选）</span>
           <input class="input" id="ct-endpoint" placeholder="留空使用默认公网 Endpoint" data-i18n-placeholder="placeholder.endpoint" autocomplete="off">
-          <small data-i18n="ct.endpointHint">vCenter 必填，例如 https://vcenter.example.com。公有云一般留空；阿里云、腾讯云、华为云可用 {service} 占位符指定自定义网关。</small>
+          <small data-i18n="ct.endpointHint">vCenter / Proxmox VE 必填，例如 https://vcenter.example.com 或 https://pve.example.com:8006。公有云一般留空；阿里云、腾讯云、华为云可用 {service} 占位符指定自定义网关。</small>
         </label>
         <label class="field cloud-region">
           <span data-i18n="label.region">区域（Region）</span>
@@ -636,6 +637,9 @@
           <span id="ct-secret-label">SecretKey</span>
           <input class="input" id="ct-secret" type="password" placeholder="留空表示不修改" data-i18n-placeholder="placeholder.keepEmpty" autocomplete="new-password">
         </label>
+        <div class="field span-2 cloud-pve hidden">
+          <small data-i18n="ct.pveHint">推荐使用 API Token：用户名填 root@pam!tokenid，密钥填 Token 的 UUID；也可填 root@pam 与登录密码。QEMU 虚拟机 IP 依赖 qemu-guest-agent，LXC 容器直接读取网卡配置。</small>
+        </div>
         <label class="field span-2 cloud-credentials hidden">
           <span data-i18n="label.serviceAccount">服务账号 JSON（Google Cloud）</span>
           <textarea class="input" id="ct-credentials" rows="5" placeholder="粘贴服务账号 JSON，留空表示不修改已保存的凭据" data-i18n-placeholder="placeholder.serviceAccount" autocomplete="off"></textarea>
@@ -643,7 +647,7 @@
         </label>
         <label class="field checkbox-field span-2 cloud-insecure hidden">
           <input type="checkbox" id="ct-insecure">
-          <span data-i18n="ct.insecure">跳过 vCenter TLS 证书校验</span>
+          <span data-i18n="ct.insecure">跳过 vCenter / Proxmox VE TLS 证书校验</span>
         </label>
       </div>
 

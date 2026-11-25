@@ -11,6 +11,7 @@ import (
 // Supported cloud providers.
 const (
 	CloudVCenter    = "vcenter"
+	CloudPVE        = "pve"
 	CloudAliyun     = "aliyun"
 	CloudTencent    = "tencent"
 	CloudHuawei     = "huawei"
@@ -37,6 +38,8 @@ func CloudProviderLabel(provider string) string {
 	switch normalizeCloudProvider(provider) {
 	case CloudVCenter:
 		return "VMware vCenter"
+	case CloudPVE:
+		return "Proxmox VE"
 	case CloudAliyun:
 		return "阿里云"
 	case CloudTencent:
@@ -58,6 +61,8 @@ func normalizeCloudProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "vcenter", "vmware", "vsphere":
 		return CloudVCenter
+	case "pve", "proxmox", "proxmoxve", "proxmox-ve":
+		return CloudPVE
 	case "aliyun", "alibaba", "alibabacloud", "ali":
 		return CloudAliyun
 	case "tencent", "qcloud", "tencentcloud":
@@ -84,13 +89,15 @@ type CloudTarget struct {
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"`
 	// Endpoint overrides the provider API endpoint. It is required for
-	// vCenter and optional for the public cloud providers (useful for
-	// private endpoints or compatible APIs).
+	// vCenter and Proxmox VE and optional for the public cloud providers
+	// (useful for private endpoints or compatible APIs).
 	Endpoint string `json:"endpoint,omitempty"`
 	Region   string `json:"region,omitempty"`
-	// AccessKey is the access key id, secret id or vCenter user name.
+	// AccessKey is the access key id, secret id or the vCenter / Proxmox VE
+	// user name. For Proxmox VE API tokens it is "user@realm!tokenid".
 	AccessKey string `json:"access_key,omitempty"`
-	// SecretKey is the access key secret, secret key or vCenter password.
+	// SecretKey is the access key secret, secret key, vCenter password or
+	// Proxmox VE password / API token secret.
 	SecretKey string `json:"secret_key,omitempty"`
 	// Project is the GCP project id or the Huawei Cloud project id.
 	Project string `json:"project,omitempty"`
@@ -158,7 +165,7 @@ func (t CloudTarget) ScheduleDue(now time.Time) bool {
 // ValidateCloudTarget checks the credentials and options of a cloud target.
 func ValidateCloudTarget(t CloudTarget) error {
 	switch t.Provider {
-	case CloudVCenter, CloudAliyun, CloudTencent, CloudHuawei, CloudAWS, CloudGCP, CloudVolcengine:
+	case CloudVCenter, CloudPVE, CloudAliyun, CloudTencent, CloudHuawei, CloudAWS, CloudGCP, CloudVolcengine:
 	default:
 		return fmt.Errorf("不支持的云平台 %q", t.Provider)
 	}
@@ -185,6 +192,19 @@ func ValidateCloudTarget(t CloudTarget) error {
 		if !t.CollectInstances && len(t.ExtraCIDRs()) == 0 {
 			return fmt.Errorf("vCenter 通过 Guest IP 或附加网段采集，请至少勾选「实例 IP」或填写附加网段")
 		}
+	case CloudPVE:
+		if t.Endpoint == "" {
+			return fmt.Errorf("Proxmox VE 需要填写 API Endpoint，例如 https://pve.example.com:8006")
+		}
+		if t.AccessKey == "" || t.SecretKey == "" {
+			return fmt.Errorf("Proxmox VE 需要填写用户名（root@pam 或 root@pam!tokenid）与密码/API Token 密钥")
+		}
+		if err := validatePVEUser(t.AccessKey); err != nil {
+			return err
+		}
+		if !t.CollectInstances && len(t.ExtraCIDRs()) == 0 {
+			return fmt.Errorf("Proxmox VE 通过 Guest IP 或附加网段采集，请至少勾选「实例 IP」或填写附加网段")
+		}
 	case CloudGCP:
 		if t.Project == "" {
 			return fmt.Errorf("Google Cloud 需要填写 Project ID")
@@ -202,6 +222,16 @@ func ValidateCloudTarget(t CloudTarget) error {
 		if t.AccessKey == "" || t.SecretKey == "" {
 			return fmt.Errorf("%s 需要填写 AccessKey 与 SecretKey", CloudProviderLabel(t.Provider))
 		}
+	}
+	return nil
+}
+
+// validatePVEUser accepts "user@realm" (ticket login) or
+// "user@realm!tokenid" (API token authentication).
+func validatePVEUser(user string) error {
+	name, tokenID, isToken := strings.Cut(user, "!")
+	if !strings.Contains(name, "@") || (isToken && tokenID == "") {
+		return fmt.Errorf("Proxmox VE 用户名格式应为 user@realm（密码登录）或 user@realm!tokenid（API Token），例如 root@pam")
 	}
 	return nil
 }

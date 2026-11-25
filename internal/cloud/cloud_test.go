@@ -405,6 +405,158 @@ func TestVCenterExtraSubnets(t *testing.T) {
 	}
 }
 
+func TestPVECollect(t *testing.T) {
+	var loginCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api2/json/access/ticket":
+			loginCalls++
+			if r.ParseForm() != nil || r.PostFormValue("username") != "root@pam" || r.PostFormValue("password") != "pass" {
+				http.Error(w, "bad credentials", http.StatusUnauthorized)
+				return
+			}
+			fmt.Fprint(w, `{"data":{"ticket":"PVE:root@pam:ABC123","CSRFPreventionToken":"csrf"}}`)
+		case r.URL.Path == "/api2/json/cluster/resources":
+			if r.URL.Query().Get("type") != "vm" {
+				http.Error(w, "missing type filter", http.StatusBadRequest)
+				return
+			}
+			if cookie, err := r.Cookie("PVEAuthCookie"); err != nil || cookie.Value == "" {
+				http.Error(w, "missing ticket cookie", http.StatusUnauthorized)
+				return
+			}
+			fmt.Fprint(w, `{"data":[
+				{"node":"pve1","vmid":100,"name":"web","status":"running","type":"qemu"},
+				{"node":"pve1","vmid":200,"name":"ct","status":"running","type":"lxc"},
+				{"node":"pve1","vmid":300,"name":"off","status":"stopped","type":"qemu"},
+				{"node":"pve1","vmid":900,"name":"tpl","status":"stopped","type":"qemu","template":1}]}`)
+		case r.URL.Path == "/api2/json/nodes/pve1/qemu/100/agent/network-get-interfaces":
+			fmt.Fprint(w, `{"data":{"result":[
+				{"name":"lo","hardware-address":"00:00:00:00:00:00","ip-addresses":[{"ip-address-type":"ipv4","ip-address":"127.0.0.1","prefix":8}]},
+				{"name":"ens18","hardware-address":"02:00:00:00:00:01","ip-addresses":[
+					{"ip-address-type":"ipv4","ip-address":"10.0.1.10","prefix":24},
+					{"ip-address-type":"ipv6","ip-address":"fe80::1","prefix":64},
+					{"ip-address-type":"ipv6","ip-address":"2001:db8::10","prefix":128}]}]}}`)
+		case r.URL.Path == "/api2/json/nodes/pve1/lxc/200/interfaces":
+			fmt.Fprint(w, `{"data":[{"name":"eth0","hwaddr":"02:00:00:00:00:02","inet":"10.0.1.20/24","inet6":"fe80::2/64"}]}`)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	target := model.CloudTarget{
+		Provider:         model.CloudPVE,
+		Endpoint:         server.URL,
+		AccessKey:        "root@pam",
+		SecretKey:        "pass",
+		CollectPrefixes:  true,
+		CollectInstances: true,
+	}
+	res, err := Run(context.Background(), target, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if loginCalls != 1 {
+		t.Errorf("login calls = %d, want 1", loginCalls)
+	}
+	if res.Instances != 3 {
+		t.Errorf("instances = %d, want 3 (template excluded)", res.Instances)
+	}
+	assertAddresses(t, res.Addresses, "10.0.1.10", "10.0.1.20", "2001:db8::10")
+	if len(res.Prefixes) != 1 || res.Prefixes[0].CIDR != "10.0.1.0/24" {
+		t.Errorf("prefixes = %#v, want deduplicated 10.0.1.0/24", res.Prefixes)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("unexpected warnings: %#v", res.Warnings)
+	}
+	for _, address := range res.Addresses {
+		if address.Address == "10.0.1.10" && (address.MAC != "02:00:00:00:00:01" || address.Interface != "ens18" || address.Name != "web") {
+			t.Errorf("address metadata = %#v", address)
+		}
+	}
+}
+
+func TestPVETokenAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "PVEAPIToken=root@pam!glean=uuid-secret" {
+			http.Error(w, "bad token", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api2/json/access/ticket":
+			t.Error("API token auth must not request a ticket")
+			http.Error(w, "unexpected login", http.StatusBadRequest)
+		case "/api2/json/cluster/resources":
+			fmt.Fprint(w, `{"data":[{"node":"pve1","vmid":101,"name":"db","status":"running","type":"qemu"}]}`)
+		case "/api2/json/nodes/pve1/qemu/101/agent/network-get-interfaces":
+			fmt.Fprint(w, `{"data":{"result":[{"name":"eth0","hardware-address":"02:00:00:00:00:03","ip-addresses":[{"ip-address-type":"ipv4","ip-address":"10.0.2.5","prefix":24}]}]}}`)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	target := model.CloudTarget{
+		Provider:         model.CloudPVE,
+		Endpoint:         server.URL + "/api2/json",
+		AccessKey:        "root@pam!glean",
+		SecretKey:        "uuid-secret",
+		CollectInstances: true,
+	}
+	res, err := Run(context.Background(), target, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertAddresses(t, res.Addresses, "10.0.2.5")
+}
+
+func TestPVEExtraSubnets(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api2/json/access/ticket":
+			fmt.Fprint(w, `{"data":{"ticket":"PVE:root@pam:ABC123"}}`)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	target := model.CloudTarget{
+		Provider:        model.CloudPVE,
+		Endpoint:        server.URL,
+		AccessKey:       "root@pam",
+		SecretKey:       "pass",
+		CollectPrefixes: true,
+		ExtraSubnets:    "10.0.0.0/16, 2001:db8::/64",
+	}
+	res, err := Run(context.Background(), target, testLogger(t))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Prefixes) != 2 {
+		t.Fatalf("prefixes = %#v", res.Prefixes)
+	}
+}
+
+func TestPVEBase(t *testing.T) {
+	cases := map[string]string{
+		"https://pve.example.com:8006":           "https://pve.example.com:8006/api2/json",
+		"https://pve.example.com:8006/":          "https://pve.example.com:8006/api2/json",
+		"https://pve.example.com:8006/api2":      "https://pve.example.com:8006/api2/json",
+		"https://pve.example.com:8006/api2/json": "https://pve.example.com:8006/api2/json",
+		"":                                       "",
+	}
+	for input, want := range cases {
+		if got := pveBase(input); got != want {
+			t.Errorf("pveBase(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestParseGCPPrivateKeyRejectsGarbage(t *testing.T) {
 	if _, err := parseRSAPrivateKey("not a key"); err == nil {
 		t.Fatal("expected error for invalid key")

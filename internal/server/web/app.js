@@ -40,6 +40,7 @@ function modeLabel(mode) {
 function cloudProviderLabel(provider) {
   const labels = {
     vcenter: t('provider.vcenter'),
+    pve: t('provider.pve'),
     aliyun: t('provider.aliyun'),
     tencent: t('provider.tencent'),
     huawei: t('provider.huawei'),
@@ -600,25 +601,35 @@ function closeCloudTargetModal() {
 }
 
 // toggleCloudProviderFields adapts the credential fields to the selected
-// provider. vCenter uses username/password, GCP uses a service account JSON
-// and Huawei Cloud needs a project id in addition to the region.
+// provider. vCenter and Proxmox VE use username/password (PVE also accepts
+// API tokens), GCP uses a service account JSON and Huawei Cloud needs a
+// project id in addition to the region.
 function toggleCloudProviderFields(provider) {
   const show = (selector, visible) => {
     document.querySelectorAll(selector).forEach((node) => node.classList.toggle('hidden', !visible));
   };
   const isVCenter = provider === 'vcenter';
+  const isPVE = provider === 'pve';
+  const isVirtual = isVCenter || isPVE;
   const isGCP = provider === 'gcp';
   const isHuawei = provider === 'huawei';
-  show('.cloud-region', !isVCenter);
+  show('.cloud-region', !isVirtual);
   show('.cloud-project', isHuawei || isGCP);
   show('.cloud-access', !isGCP);
   show('.cloud-secret', !isGCP);
   show('.cloud-credentials', isGCP);
-  show('.cloud-insecure', isVCenter);
-  $('ct-endpoint-label').textContent = isVCenter ? t('ct.endpointRequired') : t('ct.endpointOptional');
+  show('.cloud-insecure', isVirtual);
+  show('.cloud-pve', isPVE);
+  $('ct-endpoint-label').textContent = isVirtual ? t('ct.endpointRequired') : t('ct.endpointOptional');
   $('ct-project-label').textContent = isGCP ? 'Project ID' : t('ct.projectHuawei');
-  $('ct-access-label').textContent = isVCenter ? t('label.username') : t('ct.accessKey');
-  $('ct-secret-label').textContent = isVCenter ? t('label.password') : t('ct.secretKey');
+  $('ct-access-label').textContent = isVCenter ? t('label.username') : isPVE ? t('ct.pveUser') : t('ct.accessKey');
+  $('ct-secret-label').textContent = isVCenter ? t('label.password') : isPVE ? t('ct.pveSecret') : t('ct.secretKey');
+  const endpoint = $('ct-endpoint');
+  endpoint.dataset.i18nPlaceholder = isVirtual ? 'placeholder.endpointVirtual' : 'placeholder.endpoint';
+  endpoint.placeholder = t(endpoint.dataset.i18nPlaceholder);
+  const access = $('ct-access');
+  access.dataset.i18nPlaceholder = isPVE ? 'placeholder.pveUser' : 'placeholder.keepEmpty';
+  access.placeholder = t(access.dataset.i18nPlaceholder);
 }
 
 async function saveCloudTarget(event) {

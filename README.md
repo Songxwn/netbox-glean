@@ -9,7 +9,7 @@
 - 批量采集所有启用的目标
 - **批量扫描网段**：ICMP 探活后按协议探测，自动创建采集目标，可立即采集同步
 - **独立的 IP 采集**：读取 SNMP 设备的 ARP/NDP 表，或扫描 IPv4/IPv6 网段，单独写入 NetBox IPAM
-- **云资产采集**：从 vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎读取 VPC/子网网段、实例 IP 与弹性公网 IP，单独写入 NetBox IPAM
+- **云资产采集**：从 vCenter、Proxmox VE、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎读取 VPC/子网网段、实例 IP 与弹性公网 IP，单独写入 NetBox IPAM
 - 查看每次采集的日志、硬件摘要、扫描结果和 NetBox 同步结果
 - 在线配置 NetBox 连接、默认 Site / Device Role / Platform 和同步策略
 - **中英文界面切换**：侧边栏一键切换，偏好保存在浏览器本地
@@ -38,7 +38,7 @@
   - 支持批量执行所有启用的 IP 采集目标
 - **云资产采集**
   - 独立的云账号目标、页面、API 与定时任务，与设备 / IP 采集分离
-  - 支持 VMware vCenter、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎
+  - 支持 VMware vCenter、Proxmox VE、阿里云（含国际站）、腾讯云、华为云、AWS、Google Cloud、火山引擎
   - 采集 VPC / 子网 / 交换机网段，写入 NetBox IPAM Prefix
   - 采集实例私网 IP 与弹性公网 IP，写入 NetBox IPAM IP Address
   - 全部使用标准库手写签名与 HTTP 请求，不引入云厂商 SDK
@@ -316,6 +316,7 @@ IP 地址采集与设备采集完全分开：在「IP 采集」页面新增独�
 | 云平台 | 必填字段 | 说明 |
 | --- | --- | --- |
 | VMware vCenter | Endpoint、用户名、密码 | 通过 `/api/session` 登录，读取虚拟机与 Guest Networking 接口 IP；vCenter API 不提供子网 CIDR，请在「附加网段」中手工填写 |
+| Proxmox VE | Endpoint、用户名、密码/API Token | 通过 `/api2/json` 读取 QEMU 虚拟机（依赖 qemu-guest-agent）与 LXC 容器的网卡 IP，并按网卡前缀自动推导子网网段；用户名填 `root@pam!tokenid` + Token UUID 走 API Token 认证，填 `root@pam` + 密码走 ticket 登录 |
 | 阿里云（含国际站） | Region、AccessKey、SecretKey | 调用 ECS 与 VPC RPC API；区域端点使用 `*.aliyuncs.com`，国际站使用对应区域端点 |
 | 腾讯云 | Region、SecretId、SecretKey | 调用 CVM 与 VPC API（TC3-HMAC-SHA256） |
 | 华为云 | Region、Project ID、AccessKey、SecretKey | 调用 VPC / EIP 与 ECS API，Project ID 用于资源路径 |
@@ -326,7 +327,7 @@ IP 地址采集与设备采集完全分开：在「IP 采集」页面新增独�
 补充说明：
 
 - 所有云平台都支持自定义 `Endpoint`。阿里云、腾讯云、华为云还支持在 Endpoint 中使用 `{service}` 占位符，例如 `https://{service}.example.internal`。
-- 「附加网段」可填写任意数量、逗号分隔的 IPv4 / IPv6 CIDR，会与云 API 发现的结果合并去重；特别适合 vCenter 场景。
+- 「附加网段」可填写任意数量、逗号分隔的 IPv4 / IPv6 CIDR，会与云 API 发现的结果合并去重；特别适合 vCenter 场景（Proxmox VE 已能从 Guest 网卡自动推导网段，附加网段用于补充）。
 - 云网段写入前会规范化并去重；单次同步最多写入 1000 个 Prefix 与 1000 个 IP。
 - 云 IP 默认以「未分配接口」形式写入。若采集到的 MAC 能在 NetBox 中匹配到接口，则会自动分配到该接口；已存在的 IP 不会被覆盖分配。
 - Prefix 描述会记录 `netbox-glean cloud <云平台> <目标名> <类型> <名称> vpc=<ID> <区域>`，便于回溯来源。
@@ -397,7 +398,7 @@ Web UI 使用的接口也可以直接调用：
 
 IP 采集目标对象的主要字段：`name`、`enabled`、`subnets`（逗号分隔的 IPv4 / IPv6 CIDR，IPv6 最宽 `/120`）、`address` / `port` / `snmp`（可选 SNMP 来源）、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_ip_addresses` 与 `sync_unmatched_ips`。采集结果中的 `ip_addresses` 数组包含 `address`、`mac`、`interface`、`source` 等字段。
 
-云资产目标对象的主要字段：`name`、`enabled`、`provider`（`vcenter` / `aliyun` / `tencent` / `huawei` / `aws` / `gcp` / `volcengine`）、`endpoint`、`region`、`project`（GCP / 华为云）、`access_key`、`secret_key`、`credentials`（GCP 服务账号 JSON）、`insecure`（vCenter）、`collect_prefixes` / `collect_instances` / `collect_public_ips`、`extra_subnets`、`site`、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_cloud_assets`。采集结果中的 `cloud` 字段包含 `provider`、`vpcs`、`subnets`、`instances`、`public_ips`、`prefixes`、`addresses` 与 `warnings`。
+云资产目标对象的主要字段：`name`、`enabled`、`provider`（`vcenter` / `pve` / `aliyun` / `tencent` / `huawei` / `aws` / `gcp` / `volcengine`）、`endpoint`、`region`、`project`（GCP / 华为云）、`access_key`、`secret_key`、`credentials`（GCP 服务账号 JSON）、`insecure`（vCenter / Proxmox VE）、`collect_prefixes` / `collect_instances` / `collect_public_ips`、`extra_subnets`、`site`、`schedule_enabled`、`schedule_interval_minutes`、`last_run_at`。设置对象包含 `sync_cloud_assets`。采集结果中的 `cloud` 字段包含 `provider`、`vpcs`、`subnets`、`instances`、`public_ips`、`prefixes`、`addresses` 与 `warnings`。
 
 批量扫描请求示例：
 
@@ -491,6 +492,7 @@ git push origin v0.1.0
 - 单次同步最多处理 1000 个 IP，超大 ARP 表会被截断并产生警告。
 - 云资产采集受云 API 分页与限流影响；单次最多遍历 200 页、每页 100（GCP 为 500）条，超出部分不会写入。
 - vCenter 只提供 Guest IP，不提供 VPC/子网 CIDR；需要记录网段时请使用「附加网段」。
+- Proxmox VE 的 QEMU 虚拟机 IP 依赖虚拟机内安装并运行 qemu-guest-agent；未安装时任务会给出警告。LXC 容器与已停止的实例不受影响（停止的实例跳过采集）。PVE 没有弹性公网 IP 概念，勾选该选项只会产生提示。
 - 云 API 凭据需要对应的只读权限（如告警只读、VPC 只读、ECS 只读、Compute Viewer 等）。权限不足时任务会明确返回云 API 错误。
 - 云资产同步不会删除云上已不存在的 NetBox Prefix/IP，避免误删人工维护的数据。
 - NetBox 写入为逐对象 REST 调用，大规模设备建议分批执行或提高超时。
@@ -500,7 +502,7 @@ git push origin v0.1.0
 ```text
 cmd/netbox-glean/        程序入口
 internal/collect/        SNMP / IPMI / Redfish 采集器
-internal/cloud/          vCenter 与公有云 API 采集器（手写签名）
+internal/cloud/          vCenter、Proxmox VE 与公有云 API 采集器（手写签名）
 internal/netbox/         NetBox REST 客户端与同步逻辑
 internal/model/          共享数据类型与默认值
 internal/store/          JSON 持久化
@@ -526,9 +528,9 @@ internal/config/         命令行与环境变量
 | 有邻居但没有创建 Cable | 远端设备需先存在于 NetBox；检查远端端口名是否与 NetBox 接口名一致，任务日志会列出跳过的原因 |
 | 批量扫描没有新增目标 | 确认网段路由、ICMP 权限、协议端口放行与凭据正确；任务详情会显示每台设备是跳过还是失败 |
 | IP 采集结果为空 | 确认 IP 采集目标至少配置了扫描网段或 SNMP 来源；ICMP 结果缺少 MAC 时需开启「写入未匹配接口的 IP」 |
-| 云资产采集返回 401/403 | 检查 AccessKey / SecretKey 是否有效、是否具备只读权限；GCP 检查服务账号 JSON 与 Project ID；vCenter 检查用户名密码与 Endpoint |
+| 云资产采集返回 401/403 | 检查 AccessKey / SecretKey 是否有效、是否具备只读权限；GCP 检查服务账号 JSON 与 Project ID；vCenter 检查用户名密码与 Endpoint；Proxmox VE 检查用户名 realm、API Token 是否启用及权限（VM.Audit / Sys.Audit） |
 | 云资产采集返回 400/404 | 检查 Region、Project ID、Endpoint 与云 API 版本是否匹配；任务日志会保留云 API 的错误码与消息 |
-| 云资产网段为空 | vCenter 需要在「附加网段」中手工填写 CIDR；公有云检查目标账号下是否真的有 VPC/子网，以及是否勾选了「VPC / 子网 / 交换机网段」 |
+| 云资产网段为空 | vCenter 需要在「附加网段」中手工填写 CIDR；Proxmox VE 检查虚拟机是否运行 qemu-guest-agent；公有云检查目标账号下是否真的有 VPC/子网，以及是否勾选了「VPC / 子网 / 交换机网段」 |
 
 日志会随任务保存在内存中，也可通过 `--debug` 查看进程级日志。
 
